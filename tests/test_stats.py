@@ -421,12 +421,15 @@ def test_skipped_rows_reported_on_stderr_not_stdout(tmp_path):
 
 
 def test_default_input_path_under_home_when_env_unset(tmp_path):
-    # Point HOME at a temp dir and remove DISPATCH_LEDGER so the default-path
-    # branch runs without ever touching the real ~/.claude.
+    # Point the home directory at a temp dir and remove DISPATCH_LEDGER so
+    # the default-path branch runs without ever touching the real
+    # ~/.claude. Path.home() reads HOME on POSIX but USERPROFILE on Windows
+    # (ntpath.expanduser never looks at HOME), so both must be set or this
+    # silently falls through to the real home directory instead.
     result = run_stats(
         ["--json"],
         ledger_path=None,
-        env_overrides={"HOME": str(tmp_path)},
+        env_overrides={"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)},
         unset=("DISPATCH_LEDGER",),
     )
     # Nothing at HOME/.claude/dispatch/runs.tsv yet, so this is the

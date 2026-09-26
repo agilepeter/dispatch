@@ -167,12 +167,32 @@ def test_unicode_notes_roundtrip(tmp_path):
     assert rows[1][-1] == note
 
 
+def test_sanitize_replaces_lone_surrogate_with_replacement_char():
+    """Direct, platform-independent unit test for the surrogateescape fix.
+    A lone surrogate codepoint is exactly what sys.argv holds, on a POSIX
+    mangled locale, for an argument byte that is not valid UTF-8; a strict
+    .encode("utf-8") on that string raises UnicodeEncodeError. Constructed
+    here as a literal so it runs identically on every OS, unlike a real
+    subprocess argv injection -- see the skipped end-to-end test below for
+    why that path is POSIX-only."""
+    mod = load_ledger_module()
+    result = mod.sanitize("caf\udce9 with an invalid byte")
+    assert result == "caf� with an invalid byte"
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows subprocess command-line building (list2cmdline) must "
+           "decode every argv byte to build one command-line string before "
+           "the child process even starts, so a raw invalid UTF-8 byte can't "
+           "reach a child's argv the way a POSIX mangled locale allows; the "
+           "platform-independent unit test above covers the same sanitize() "
+           "fix directly.",
+)
 def test_invalid_utf8_argv_byte_is_replaced_not_crashed(tmp_path):
-    """sys.argv is decoded with surrogateescape, so an argument holding a
-    byte that is not valid UTF-8 (a mangled locale, a stray byte from
-    another encoding) carries a lone surrogate codepoint that a strict
-    .encode("utf-8") cannot re-encode. One bad byte in a caller's argument
-    must not crash the append; it should come through as U+FFFD."""
+    """End-to-end: the same fix, exercised through a real subprocess with a
+    genuinely invalid byte in one argv element, on the platforms where that
+    is possible to construct at all."""
     ledger = tmp_path / "runs.tsv"
     argv = [sys.executable, str(LEDGER_SCRIPT)] + list(BASE_APPEND_ARGS) + ["--notes", "placeholder"]
     argv_bytes = [os.fsencode(a) if isinstance(a, str) else a for a in argv]
@@ -332,12 +352,15 @@ def test_unknown_subcommand_stderr_is_one_line(tmp_path):
 
 
 def test_default_ledger_path_under_home_when_env_unset(tmp_path):
-    # Point HOME at a temp dir and remove DISPATCH_LEDGER so the default-path
-    # branch runs end to end without ever touching the real ~/.claude.
+    # Point the home directory at a temp dir and remove DISPATCH_LEDGER so
+    # the default-path branch runs end to end without ever touching the
+    # real ~/.claude. Path.home() reads HOME on POSIX but USERPROFILE on
+    # Windows (ntpath.expanduser never looks at HOME), so both must be set
+    # or this silently falls through to the real home directory instead.
     result = run_ledger(
         BASE_APPEND_ARGS,
         ledger_path=None,
-        env_overrides={"HOME": str(tmp_path)},
+        env_overrides={"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)},
         unset=("DISPATCH_LEDGER",),
     )
     assert result.returncode == 0, result.stderr
