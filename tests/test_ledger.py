@@ -370,15 +370,16 @@ def test_default_ledger_path_under_home_when_env_unset(tmp_path):
 
 @pytest.mark.skipif(
     sys.platform == "win32",
-    reason="append_row()'s own docstring and the README already document that "
-           "O_APPEND is emulated by the C runtime on Windows rather than "
-           "guaranteed atomic by the OS, so two real processes appending at "
-           "the exact same instant there do not carry the same interleaving "
-           "guarantee this stress test checks. Confirmed platform-specific, "
-           "not a cross-platform bug: 10/10 clean runs locally on macOS, and "
-           "ensure_ledger_header()'s own race (a single header, created "
-           "exactly once) is still covered on every OS by "
-           "test_first_write_race_header_stays_on_line_one.",
+    reason="On Windows, O_APPEND is emulated by the C runtime rather than "
+           "guaranteed atomic by the OS, and a writer's view of the file's "
+           "last byte can go stale against another process's append that "
+           "just landed. Two writers that both read a stale non-newline "
+           "last byte each prepend a newline to close a torn line, and the "
+           "second one leaves a blank line (which dispatch-stats skips), so "
+           "this 20-process stress test is not a meaningful check there. "
+           "POSIX filesystems serialise a write against the reads around it, "
+           "so the guard cannot misfire there. The header's own creation "
+           "race is covered on every OS by the two tests that force it.",
 )
 def test_concurrent_appends_produce_one_header_and_n_clean_rows(tmp_path):
     ledger = tmp_path / "runs.tsv"
@@ -474,6 +475,65 @@ def test_first_write_race_header_stays_on_line_one(tmp_path):
     assert len(data_lines) == 2
     assert any(line.startswith("ts-a\t") for line in data_lines)
     assert any(line.startswith("ts-b\t") for line in data_lines)
+
+
+def test_row_appended_the_moment_the_ledger_appears_survives(tmp_path):
+    """The ledger must never become visible before its header is complete.
+    Pauses the creator right AFTER its os.link() succeeds and lets a
+    bystander append in that window: the bystander takes the fast path
+    (the file exists) and appends at end of file. If the header were
+    linked in empty and written afterwards through a non-append handle,
+    that write would land at offset 0 and destroy the bystander's row;
+    the pause before os.link in the test above cannot see that ordering.
+    """
+    mod = load_ledger_module()
+    ledger = tmp_path / "runs.tsv"
+
+    real_link = mod.os.link
+    creator_linked = threading.Event()
+    release_creator = threading.Event()
+    link_call_count = [0]
+
+    def link_then_pause(src, dst):
+        result = real_link(src, dst)
+        link_call_count[0] += 1
+        if link_call_count[0] == 1:
+            creator_linked.set()
+            assert release_creator.wait(timeout=5), "test deadlocked waiting to be released"
+        return result
+
+    mod.os.link = link_then_pause
+    try:
+        row_a = ["ts-a", "plan-a", "1", "text-a", "DONE", "1", "PASS", "1", "PASS", "0", "complete", "sonnet", "-"]
+        row_c = ["ts-c", "plan-c", "3", "text-c", "DONE", "1", "PASS", "1", "PASS", "0", "complete", "sonnet", "-"]
+        results = {}
+
+        def creator():
+            mod.append_row(ledger, row_a)
+            results["a"] = "done"
+
+        thread_a = threading.Thread(target=creator)
+        thread_a.start()
+        try:
+            assert creator_linked.wait(timeout=5), "creator never linked the ledger into place"
+            mod.append_row(ledger, row_c)
+            results["c"] = "done"
+        finally:
+            release_creator.set()
+            thread_a.join(timeout=5)
+        assert not thread_a.is_alive(), "creator's thread did not finish"
+        assert results == {"a": "done", "c": "done"}
+    finally:
+        mod.os.link = real_link
+
+    lines = ledger.read_text(encoding="utf-8").splitlines()
+    header = "\t".join(mod.HEADER)
+    assert lines[0] == header
+    assert lines.count(header) == 1
+    data_lines = [line for line in lines if line != header]
+    assert len(data_lines) == 2
+    assert any(line.startswith("ts-a\t") for line in data_lines)
+    assert any(line.startswith("ts-c\t") for line in data_lines)
 
 
 def test_append_to_existing_ledger_creates_no_temp_file(tmp_path):
