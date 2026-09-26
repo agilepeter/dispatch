@@ -25,10 +25,29 @@ FINAL_STATUS_CHOICES = ["complete", "escalated", "user"]
 # spec_review and quality_review are NOT closed sets in the real ledger: the
 # skill's field reference documents PASS/FAIL and PASS/CRITICAL/IMPORTANT/
 # SKIPPED, but real rows also carry free-form annotations such as
-# "FAIL→PASS" (recovered after a re-review) and "n/a (docs task; ...)"
+# "FAIL->PASS" (recovered after a re-review) and "n/a (docs task; ...)"
 # (a non-code task where the stage does not apply). Rejecting those would
 # reject exactly the rows the skill actually produces, so these two fields
 # only require non-empty text.
+
+
+class OneLineArgumentParser(argparse.ArgumentParser):
+    """Bad input must fail loud but short: one line on stderr, no multi-line
+    usage block. argparse's default error() prints print_usage() first and
+    then the "prog: error: ..." line; this skips the usage block and keeps
+    only that second line, still on stderr, still exit status 2 (argparse's
+    own usage-error status; the only other non-zero exit this tool has is 1,
+    for a write failure in main()).
+
+    add_subparsers() defaults parser_class to type(self), so the "append"
+    subparser created from a OneLineArgumentParser instance is itself a
+    OneLineArgumentParser and inherits this override automatically -- an
+    invalid --impl-status or a missing --plan is detected on that subparser,
+    not the top-level one, and needs the same fix.
+    """
+
+    def error(self, message):
+        self.exit(2, f"{self.prog}: error: {message}\n")
 
 
 def default_ledger_path():
@@ -66,7 +85,7 @@ def non_empty(raw):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
+    parser = OneLineArgumentParser(
         prog="dispatch-ledger",
         description="Append one run to the dispatch ledger.",
     )
@@ -86,7 +105,7 @@ def build_parser():
     append.add_argument("--impl-loops", required=True, type=non_negative_int)
     append.add_argument(
         "--spec-review", required=True, type=non_empty,
-        help="PASS, FAIL, or a free-form outcome such as 'FAIL→PASS' or 'n/a (...)'.",
+        help="PASS, FAIL, or a free-form outcome such as 'FAIL->PASS' or 'n/a (...)'.",
     )
     append.add_argument("--spec-loops", required=True, type=non_negative_int)
     append.add_argument(

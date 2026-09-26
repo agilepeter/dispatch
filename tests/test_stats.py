@@ -12,6 +12,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STATS_SCRIPT = REPO_ROOT / "bin" / "dispatch-stats"
+LEDGER_SCRIPT = REPO_ROOT / "bin" / "dispatch-ledger"
 
 HEADER = [
     "ts", "plan_path", "task_idx", "task_text", "impl_status", "impl_loops",
@@ -30,6 +31,17 @@ def run_stats(args, ledger_path=None, env_overrides=None, unset=()):
         env.pop(key, None)
     return subprocess.run(
         [sys.executable, str(STATS_SCRIPT), *args],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def run_ledger(args, ledger_path):
+    env = dict(os.environ)
+    env["DISPATCH_LEDGER"] = str(ledger_path)
+    return subprocess.run(
+        [sys.executable, str(LEDGER_SCRIPT), *args],
         capture_output=True,
         text=True,
         env=env,
@@ -195,6 +207,46 @@ def test_unicode_and_long_notes_do_not_break_parsing(tmp_path):
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["total_runs"] == 1
+
+
+def test_quote_leading_field_does_not_swallow_following_rows(tmp_path):
+    """Regression: csv's default quoting rules treat a field that STARTS
+    with a literal '"' as an open quote, then read through following
+    newline(s) looking for its close -- silently merging later rows into
+    that one field. Reproduced before the fix as total_runs=2, skipped=0 on
+    this exact fixture. Three real rows via dispatch-ledger append: the
+    middle one's notes start with a quote, the third's text holds a lone
+    quote mid-field (which is not special and must not trip the same bug).
+    """
+    ledger = tmp_path / "runs.tsv"
+    common = [
+        "--impl-status", "DONE", "--impl-loops", "1",
+        "--spec-review", "PASS", "--spec-loops", "1",
+        "--quality-review", "PASS", "--quality-loops", "0",
+        "--final-status", "complete", "--model", "sonnet",
+    ]
+    r1 = run_ledger(
+        ["append", "--plan", "plans/a.md", "--task", "1", "--text", "first row", *common, "--notes", "plain"],
+        ledger,
+    )
+    r2 = run_ledger(
+        ["append", "--plan", "plans/b.md", "--task", "2", "--text", "second row", *common,
+         "--notes", '"starts with a quote'],
+        ledger,
+    )
+    r3 = run_ledger(
+        ["append", "--plan", "plans/c.md", "--task", "3", "--text", 'has a lone " mid-text', *common,
+         "--notes", "third row"],
+        ledger,
+    )
+    for r in (r1, r2, r3):
+        assert r.returncode == 0, r.stderr
+
+    result = run_stats(["--json"], ledger_path=ledger)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["total_runs"] == 3
+    assert payload["skipped_rows"] == 0
 
 
 def test_top_failing_plans_ranked_by_escalations(tmp_path):

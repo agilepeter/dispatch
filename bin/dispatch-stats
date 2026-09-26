@@ -6,6 +6,7 @@ Stdlib-only port of the private automations/dispatch/summarize.py, plus a
 column reference.
 """
 import argparse
+import csv
 import json
 import os
 import sys
@@ -57,12 +58,18 @@ def load_rows(path, cutoff):
     if not path.exists():
         return [], 0
 
-    import csv
-
     skipped = 0
     rows = []
     with open(path, newline="", encoding="utf-8") as f:
-        reader = csv.reader(f, delimiter="\t")
+        # quoting=QUOTE_NONE: the writer (dispatch-ledger's sanitize()) already
+        # guarantees no field holds a tab or newline, so a plain split on the
+        # delimiter is correct and sufficient. Without it, csv's default
+        # quoting rules treat a field that STARTS with a literal '"' (e.g. a
+        # note beginning `"starts with a quote`) as an open quote and read
+        # through the following newline(s) looking for its close, silently
+        # merging following rows into that field -- reproduced against a real
+        # 3-row fixture as total_runs=2, skipped_rows=0 before this fix.
+        reader = csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE)
         try:
             header = next(reader)
         except StopIteration:
@@ -160,13 +167,13 @@ def print_oneline(stats):
     print(
         f"Dispatch ({stats['days']}d): {stats['total_runs']} runs / {stats['avg_spec_loops']} avg spec_loops"
         f" / {stats['escalation_count']} escalated ({stats['escalation_rate_pct']}%)"
-        + (f" — {tiers_str}" if tiers_str else "")
+        + (f" | {tiers_str}" if tiers_str else "")
     )
 
 
 def print_full(stats):
     rule = "─" * 49
-    print(f"Dispatch health — last {stats['days']} days (since {stats['since']})")
+    print(f"Dispatch health: last {stats['days']} days (since {stats['since']})")
     print(rule)
     print(f"Total task runs:        {stats['total_runs']}")
     print(f"Avg impl_loops:         {stats['avg_impl_loops']}")

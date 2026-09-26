@@ -45,7 +45,7 @@ Every task run appends one TSV row:
 | `task_text` | the task's spec text, or a summary of it |
 | `impl_status` | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` / `BLOCKED` |
 | `impl_loops` | number of times the implementer was (re-)dispatched |
-| `spec_review` | `PASS` / `FAIL`, or a free-form outcome such as `FAIL→PASS` or `n/a (...)` |
+| `spec_review` | `PASS` / `FAIL`, or a free-form outcome such as `FAIL->PASS` or `n/a (...)` |
 | `spec_loops` | number of spec-review fix-and-recheck cycles |
 | `quality_review` | `PASS` / `CRITICAL` / `IMPORTANT` / `SKIPPED`, or a free-form outcome |
 | `quality_loops` | number of quality-review fix-and-recheck cycles |

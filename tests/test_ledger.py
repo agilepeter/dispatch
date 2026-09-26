@@ -59,6 +59,18 @@ def read_rows(path):
         return list(csv.reader(f, delimiter="\t"))
 
 
+def assert_one_line_stderr(result):
+    """Bad input must exit non-zero with exactly one line on stderr: no
+    argparse usage block, just the "prog: error: ..." line."""
+    assert result.returncode != 0
+    stderr = result.stderr
+    assert stderr.endswith("\n"), repr(stderr)
+    lines = stderr.splitlines()
+    assert len(lines) == 1, f"expected exactly one stderr line, got {len(lines)}: {stderr!r}"
+    assert ": error:" in lines[0]
+    return lines[0]
+
+
 def test_script_is_executable():
     assert os.access(LEDGER_SCRIPT, os.X_OK)
 
@@ -104,6 +116,21 @@ def test_tabs_and_newlines_replaced_with_spaces(tmp_path):
     assert "\t" not in data_row[3]
     assert "\n" not in data_row[3]
     assert data_row[3] == "Line one with a tab and a newline and crlf"
+
+
+def test_bare_carriage_return_replaced_with_space(tmp_path):
+    # sanitize() handles \t, \n, and \r\n; this covers the fourth case, a
+    # lone \r with no following \n (an old Mac-style line ending).
+    ledger = tmp_path / "runs.tsv"
+    args = list(BASE_APPEND_ARGS)
+    args[args.index("--text") + 1] = "before\rafter"
+    result = run_ledger(args, ledger_path=ledger)
+    assert result.returncode == 0, result.stderr
+    rows = read_rows(ledger)
+    data_row = rows[1]
+    assert len(data_row) == 13
+    assert "\r" not in data_row[3]
+    assert data_row[3] == "before after"
 
 
 def test_unicode_notes_roundtrip(tmp_path):
@@ -196,7 +223,7 @@ def test_invalid_impl_status_rejected(tmp_path, bad_value):
     args = list(BASE_APPEND_ARGS)
     args[args.index("--impl-status") + 1] = bad_value
     result = run_ledger(args, ledger_path=ledger)
-    assert result.returncode != 0
+    assert_one_line_stderr(result)
     assert not ledger.exists()
 
 
@@ -205,7 +232,7 @@ def test_invalid_final_status_rejected(tmp_path):
     args = list(BASE_APPEND_ARGS)
     args[args.index("--final-status") + 1] = "done"
     result = run_ledger(args, ledger_path=ledger)
-    assert result.returncode != 0
+    assert_one_line_stderr(result)
     assert not ledger.exists()
 
 
@@ -215,7 +242,17 @@ def test_invalid_loop_counts_rejected(tmp_path, bad_value):
     args = list(BASE_APPEND_ARGS)
     args[args.index("--impl-loops") + 1] = bad_value
     result = run_ledger(args, ledger_path=ledger)
-    assert result.returncode != 0
+    assert_one_line_stderr(result)
+    assert not ledger.exists()
+
+
+def test_empty_text_rejected(tmp_path):
+    ledger = tmp_path / "runs.tsv"
+    args = list(BASE_APPEND_ARGS)
+    args[args.index("--text") + 1] = ""
+    result = run_ledger(args, ledger_path=ledger)
+    line = assert_one_line_stderr(result)
+    assert "--text" in line
     assert not ledger.exists()
 
 
@@ -229,7 +266,23 @@ def test_missing_required_argument_rejected(tmp_path):
         "--final-status", "complete", "--model", "sonnet",
     ]  # --plan omitted
     result = run_ledger(args, ledger_path=ledger)
-    assert result.returncode != 0
+    line = assert_one_line_stderr(result)
+    assert "--plan" in line
+    assert not ledger.exists()
+
+
+def test_no_subcommand_stderr_is_one_line(tmp_path):
+    # The fix has to hold on the top-level parser too, not only "append".
+    ledger = tmp_path / "runs.tsv"
+    result = run_ledger([], ledger_path=ledger)
+    assert_one_line_stderr(result)
+    assert not ledger.exists()
+
+
+def test_unknown_subcommand_stderr_is_one_line(tmp_path):
+    ledger = tmp_path / "runs.tsv"
+    result = run_ledger(["bogus"], ledger_path=ledger)
+    assert_one_line_stderr(result)
     assert not ledger.exists()
 
 
