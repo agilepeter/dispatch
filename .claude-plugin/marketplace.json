@@ -8,7 +8,7 @@
     {
       "name": "dispatch",
       "source": "./",
-      "description": "Build an approved plan task by task with fresh implementer and reviewer subagents, an exit-code gate and a ledger."
+      "description": "Build an approved plan of three or more checkbox tasks, one task at a time, with a fresh implementer, a spec reviewer, a quality reviewer, an exit-code gate and a ledger row per task."
     }
   ]
 }

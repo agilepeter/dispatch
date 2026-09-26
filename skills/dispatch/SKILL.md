@@ -68,9 +68,9 @@ never a full model id, which changes over time and varies by provider.
   -> setup: read the plan once, record the baseline commit, read its Gates: block
   -> design pass (multi-file plans only): write <slug>.design.md, get ONE approval
   -> per task, in order:
-       implementer subagent   <- templates/implementer-brief.md + task text + design slice
-       -> spec reviewer       <- templates/spec-review.md          (max 2 loops, then escalate)
-       -> quality reviewer    <- templates/quality-review.md, diff baseline..HEAD (max 2 loops)
+       implementer subagent <- ${CLAUDE_SKILL_DIR}/templates/implementer-brief.md + task text + design slice
+       -> spec reviewer <- ${CLAUDE_SKILL_DIR}/templates/spec-review.md (max 2 loops, then escalate)
+       -> quality reviewer <- ${CLAUDE_SKILL_DIR}/templates/quality-review.md, diff baseline..HEAD (max 2 loops)
        -> DoD gate: run the plan's Gates: commands; record each command and its exit status
        -> tick the task's checkbox in the plan
        -> dispatch-ledger append ...   (always -- including on escalation)
@@ -100,10 +100,11 @@ A run can span sessions. Before doing anything else:
    indices.
 3. Resume from the first task with neither. Never silently re-run a task that already has one,
    unless the user asks or a design amendment invalidated it.
-4. A plan whose header already has an `Approved:` line, with its design doc present, needs no
-   second approval question -- proceed straight to the first unfinished task. This is what
-   lets a run resume in a new session, and what lets a non-interactive run proceed on a
-   pre-approved plan.
+4. A plan is pre-approved only when its header holds a dated `Approved:` line -- one beginning
+   `Approved: 20` followed by a date, not the template's placeholder comment. A pre-approved
+   plan, with its design doc present, needs no second approval question: proceed straight to
+   the first unfinished task. This is what lets a run resume in a new session, and what lets a
+   non-interactive run proceed on a pre-approved plan.
 
 On a pause or an escalation, before handing back: make sure the plan and the design doc (not
 this conversation) capture everything decided. Nothing important may exist only in chat.
@@ -111,12 +112,14 @@ this conversation) capture everything decided. Nothing important may exist only 
 ## Program design pass (before task 1, multi-file plans only)
 
 Read the relevant existing code first -- design against the codebase that exists, never an
-imagined one. Then write `<slug>.design.md` from `templates/design.md`.
+imagined one. Then write `<slug>.design.md` from `${CLAUDE_SKILL_DIR}/templates/design.md`.
 
 Show the user only its "Types & signatures" and "Least confident decisions" sections, and ask:
 "Design look right, or what changes?" Wait for an answer before dispatching task 1. When they
-approve, write an `Approved:` line into the plan header with the date and their own words (see
-`templates/plan.md`). This is the one approval gate in the whole workflow -- never add another.
+approve, write an `Approved:` line into the plan header with the date first, then their own
+words -- e.g. `Approved: 2026-09-26: yes, ship it` -- so it satisfies the dated-line rule
+Resume checks (see `${CLAUDE_SKILL_DIR}/templates/plan.md`). This is the one approval gate in
+the whole workflow -- never add another.
 
 If a plan has no `Gates:` block filled in yet, propose commands from the repo's own manifests
 (package.json scripts, pytest/pyproject config, Cargo, a Makefile) in this same approval step.
@@ -133,7 +136,7 @@ Initialize before Stage 1: `impl_loops = 1`, `spec_loops = 1`, `quality_loops = 
 `model_impl` = the tier dispatched (record the highest tier reached if a task escalates tiers).
 
 **Stage 1 -- Implement.** Spawn a fresh implementer subagent on the model from Defaults. Paste
-`templates/implementer-brief.md`, then the task's full text, then the design slice it
+`${CLAUDE_SKILL_DIR}/templates/implementer-brief.md`, then the task's full text, then the design slice it
 implements (the file entries, signatures, and call-stack lines that apply) -- never make the
 subagent go read the plan or the design doc itself. Include the working directory, relevant
 file paths, and enough scene-setting that the subagent understands what the task is part of.
@@ -153,19 +156,22 @@ silently, never assume it is complete.
 
 **Stage 2 -- Spec review.** Only after Stage 1 reports `DONE` or an accepted
 `DONE_WITH_CONCERNS`. Spawn a fresh reviewer on the reviewer model. Paste
-`templates/spec-review.md`, then the same task text, then the implementer's report. `PASS`
+`${CLAUDE_SKILL_DIR}/templates/spec-review.md`, then the same task text, then the implementer's report. `PASS`
 moves on; issues go back to the same implementer to fix, then re-review, incrementing
 `spec_loops` each cycle, up to 2 loops before escalating to the user.
 
 **Stage 3 -- Quality review.** Only after Stage 2 passes, never before. Spawn a fresh reviewer
-on the reviewer model. Paste `templates/quality-review.md`, then `git diff <baseline>..HEAD`.
+on the reviewer model. Paste `${CLAUDE_SKILL_DIR}/templates/quality-review.md`, then `git diff <baseline>..HEAD`.
 Only a Critical finding blocks and forces a fix-and-recheck cycle (increment `quality_loops`
 each time), up to 2 loops before escalating; handle Important and Minor per the Defaults
 review-strictness setting.
 
 **DoD gate.** Spec and quality review confirm the code is *right*; this confirms it is
-*verified* -- a task is never "complete" on the strength of a report alone. Run the plan's
-`Gates:` commands in order, stopping at the first failure. Record each command and its actual
+*verified* -- a task is never "complete" on the strength of a report alone. The plan's
+`Gates:` block runs in three layers, cheapest first: static (imports, lint, a type-check),
+then runtime (unit tests, a startup smoke test), then system (integration or end-to-end) --
+run them in that order and stop at the very first failure, so a task that fails a cheap
+static check never burns time on a slow system test. Record each command and its actual
 output in this stage's ledger `notes` -- never the implementer's claim of a green run. Red
 gate: escalate rather than marking the task complete. No gate commands exist for this task: it
 is `DONE_WITH_CONCERNS`, not `complete`, with the missing verification noted.

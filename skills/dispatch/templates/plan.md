@@ -1,9 +1,11 @@
 # Plan: <name>
 
-Approved: <!-- left blank until the user approves the design pass, then filled in with the
-date and the user's own words, e.g. "2026-09-26: yes, ship it". A plan whose header already
-carries this line, with its design doc present, skips straight to the first unfinished task:
-no second approval question, in this session or a later one. -->
+Approved: <!-- left blank until the user approves the design pass. This placeholder comment
+does not count as approval by itself -- the coordinator fills the line in with the date
+first, then the user's own words, e.g. "2026-09-26: yes, ship it". Only once the line begins
+"Approved: 20" followed by a date does a plan count as pre-approved: with its design doc
+present, it then skips straight to the first unfinished task, no second approval question,
+in this session or a later one. -->
 
 Gates:
 <!-- One verification command per line, nothing else in this block. The dispatch skill runs

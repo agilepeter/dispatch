@@ -1,7 +1,7 @@
 {
   "name": "dispatch",
   "version": "0.1.0",
-  "description": "Build an approved plan task by task with fresh implementer and reviewer subagents, an exit-code gate and a ledger.",
+  "description": "Build an approved plan of three or more checkbox tasks, one task at a time, with a fresh implementer, a spec reviewer, a quality reviewer, an exit-code gate and a ledger row per task.",
   "author": {
     "name": "Peter Saddington"
   },

@@ -1,9 +1,12 @@
 """Checks on the shipped skill files themselves, not on runtime behavior.
 
-Three things matter about a file a plugin ships to every installer: every path it points at
-under ${CLAUDE_PLUGIN_ROOT} has to actually exist in the repo, every SKILL.md's frontmatter has
-to parse and carry the fields Claude Code requires, and none of these files may carry a local
-path, an internal project name, a commit trailer, or a pinned model id out into the world.
+What matters about a file a plugin ships to every installer: every path it points at under
+${CLAUDE_PLUGIN_ROOT} has to exist relative to the repo root, every path it points at under
+${CLAUDE_SKILL_DIR} has to exist relative to that particular SKILL.md's own directory (the two
+resolve differently, so mixing them up is a real way to ship a dangling reference), every
+SKILL.md's frontmatter has to parse and carry the fields Claude Code requires, and none of
+these files may carry a local path, an internal project name, a commit trailer, or a pinned
+model id out into the world.
 """
 import re
 from pathlib import Path
@@ -19,6 +22,12 @@ SKILL_FILES = sorted(SKILLS_DIR.glob("*/SKILL.md"))
 SHIPPED_FILES = sorted(SKILLS_DIR.rglob("*.md"))
 
 PLUGIN_ROOT_REF = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}(/[^\s`\"'()\[\]]+)")
+SKILL_DIR_REF = re.compile(r"\$\{CLAUDE_SKILL_DIR\}(/[^\s`\"'()\[\]]+)")
+
+# The dispatch skill's Resume step treats a plan as pre-approved only once its header's
+# `Approved:` line begins with a real date, so it can never mistake the plan template's own
+# placeholder comment (which also starts with "Approved:") for an approval.
+DATED_APPROVED_LINE = re.compile(r"^Approved: 20\d{2}-\d{2}-\d{2}")
 
 LEAK_PATTERNS = {
     "an absolute /Users/ path": re.compile(r"/Users/"),
@@ -69,6 +78,29 @@ def test_every_claude_plugin_root_reference_resolves_in_repo():
     assert checked > 0, "expected at least one ${CLAUDE_PLUGIN_ROOT}/... reference to check"
 
 
+def test_every_claude_skill_dir_reference_resolves_relative_to_its_own_skill():
+    """${CLAUDE_SKILL_DIR} resolves to the directory holding the SKILL.md that references it,
+    not the repo root and not any other skill's directory -- so each SKILL.md's own references
+    have to be checked against its own parent directory, one skill at a time. A bare relative
+    path (no variable at all, e.g. "templates/foo.md") would silently skip this check entirely,
+    which is exactly the gap that let a typo'd template name pass unnoticed before; every
+    template reference in this repo is now spelled with ${CLAUDE_SKILL_DIR} so this check
+    actually sees it.
+    """
+    checked = 0
+    for path in SKILL_FILES:
+        text = read(path)
+        skill_dir = path.parent
+        for match in SKILL_DIR_REF.finditer(text):
+            rel = match.group(1).rstrip(".,;:").lstrip("/")
+            target = skill_dir / rel
+            assert target.exists(), (
+                f"{path}: ${{CLAUDE_SKILL_DIR}}/{rel} does not exist under {skill_dir}"
+            )
+            checked += 1
+    assert checked > 0, "expected at least one ${CLAUDE_SKILL_DIR}/... reference to check"
+
+
 def test_skill_frontmatter_parses_with_name_and_description():
     assert SKILL_FILES, "expected at least one skills/*/SKILL.md"
     for path in SKILL_FILES:
@@ -91,3 +123,22 @@ def test_no_owner_specific_or_disallowed_strings():
         text = read(path)
         for label, pattern in LEAK_PATTERNS.items():
             assert not pattern.search(text), f"{path}: contains {label}"
+
+
+def test_plan_template_approved_placeholder_is_not_a_dated_approval():
+    """The plan template ships an `Approved:` placeholder comment so a user can see where the
+    line goes. That placeholder must never itself satisfy the dated-approval rule the dispatch
+    skill's Resume step checks -- otherwise every fresh plan made from this template would read
+    as already approved the instant its design doc exists, skipping the one approval gate the
+    whole workflow depends on.
+    """
+    plan_template = read(SKILLS_DIR / "dispatch" / "templates" / "plan.md")
+    approved_line = next(
+        line for line in plan_template.splitlines() if line.startswith("Approved:")
+    )
+    assert not DATED_APPROVED_LINE.match(approved_line), (
+        f"template's placeholder line matches the dated-approval form: {approved_line!r}"
+    )
+    # Positive control: a real approved line must still match, so a change that broke the
+    # regex into never matching anything would not slip this test by vacuous success.
+    assert DATED_APPROVED_LINE.match("Approved: 2026-09-26: yes, ship it")
