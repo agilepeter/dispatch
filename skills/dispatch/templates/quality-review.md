@@ -25,9 +25,6 @@ of sending the implementer back for them. If this run's Defaults block sets the 
 review setting instead, fix every finding before moving on, Minor included, inside this same
 loop.
 
-A fix-and-recheck cycle here runs at most twice; a third round of unresolved Critical findings
-escalates to the user instead of looping again.
-
 ## Report format
 
 `PASS`, or a list of findings, each labeled Critical / Important / Minor with a file:line

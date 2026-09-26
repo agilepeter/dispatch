@@ -35,9 +35,10 @@ Works out of the box on macOS and Linux. On Windows, use WSL or Git Bash with
 2. For each task, in order: dispatch a fresh implementer subagent, then a
    fresh spec-compliance reviewer, then a fresh code-quality reviewer.
 3. Send issues back to the implementer and re-review; by default only a
-   Critical quality finding blocks, and there's a cap of two review loops per
-   stage before escalating to the user. (A stricter setting is available:
-   fix every finding, Minor included, in the same loop.)
+   Critical quality finding blocks, and each stage escalates to the user
+   instead of starting a third review pass, i.e. after two fix cycles. (A
+   stricter setting is available: fix every finding, Minor included, in the
+   same loop.)
 4. Gate on runnable evidence -- the commands named in the plan's own `Gates:`
    block -- not on the implementer's claim of a green run, before marking a
    task complete.
@@ -83,12 +84,13 @@ python3 -m py_compile app.py
 
 The loop is only as good as the thing that checks it. Here that's a fresh
 reviewer that reads the actual code instead of trusting a report, and an
-exit-code gate that runs real commands instead of trusting a claim. One real
-dataset, run this way: across 121 tasks in 13 plans between 2026-05-16 and
-2026-09-26, 120 finished and one escalated to a human -- and in 51 of the 121
-(42%) a fresh reviewer still found something to send back after the
-implementer had already reported done (the spec reviewer sent 28 of those
-back; the quality reviewer flagged an Important or Critical problem in 25).
+exit-code gate that runs real commands instead of trusting a claim. As of
+2026-09-26, before this plugin's own tasks were logged to a ledger of their
+own, one real dataset run this way stood at 121 tasks across 13 plans: 120
+completed, 1 escalated to a human, and a fresh reviewer found something to
+fix in 51 of them (42%) after the implementer had already reported done.
+The maker's own product page carries this dataset's current numbers,
+refreshed on every publish.
 
 ## The ledger
 
@@ -168,8 +170,10 @@ runs: zeros and empty lists rather than a shorter payload.
   `spec_fail_count` / `spec_fail_rate_pct`, `quality_critical_count` /
   `quality_critical_rate_pct`, `escalation_count` / `escalation_rate_pct`:
   aggregate stats over `total_runs`.
-- `by_model`: one entry per model tier seen, each with its own run count,
-  escalation count, and escalation rate.
+- `by_model`: one entry per model tier seen -- `haiku`, `sonnet`, `opus`, or
+  `other` for anything else `model_impl` names -- each with its own run
+  count, escalation count, and escalation rate. A compound `model_impl` such
+  as `sonnet+opus` counts its row under both tiers it names.
 - `top_failing_plans`: up to 5 plans ranked by escalation count, each with
   its own escalation and run counts.
 - `message`: present only when `total_runs` is 0, alongside the same

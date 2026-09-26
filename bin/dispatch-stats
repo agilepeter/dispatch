@@ -22,7 +22,25 @@ HEADER = [
     "final_status", "model_impl", "notes",
 ]
 
-MODEL_ORDER = ["haiku", "sonnet", "opus"]
+MODEL_ORDER = ["haiku", "sonnet", "opus", "other"]
+RECOGNIZED_TIERS = ("haiku", "sonnet", "opus")
+
+
+def tiers_in(model_impl):
+    """Split a model_impl value like "sonnet+opus" into the tiers it names.
+
+    A task that escalated tiers mid-run records every tier it actually used, joined with "+"
+    (see the dispatch skill's Per-task loop). Splitting on "+" and counting the row once under
+    each named tier means a "sonnet+opus" row is counted under both, rather than under a
+    "sonnet+opus" bucket of its own that by_model's fixed tier list would never report -- which
+    is exactly how a compound value used to vanish from by_model entirely. Anything that is not
+    one of the three recognised tier names -- a typo, a future tier this script doesn't know
+    about yet -- goes into a single "other" bucket instead of silently dropping the row.
+    """
+    tiers = set()
+    for part in model_impl.split("+"):
+        tiers.add(part if part in RECOGNIZED_TIERS else "other")
+    return tiers
 
 
 class OneLineArgumentParser(argparse.ArgumentParser):
@@ -180,10 +198,10 @@ def compute_stats(rows, days, since):
     model_counts = defaultdict(int)
     model_escalations = defaultdict(int)
     for r in rows:
-        m = r["model_impl"]
-        model_counts[m] += 1
-        if r["final_status"] == "escalated":
-            model_escalations[m] += 1
+        for tier in tiers_in(r["model_impl"]):
+            model_counts[tier] += 1
+            if r["final_status"] == "escalated":
+                model_escalations[tier] += 1
 
     plan_runs = defaultdict(int)
     plan_escalations = defaultdict(int)

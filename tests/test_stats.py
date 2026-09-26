@@ -283,6 +283,36 @@ def test_json_output_matches_hand_computed_stats(tmp_path):
     assert by_model["opus"]["escalated"] == 0
 
 
+def test_compound_model_impl_counted_under_each_tier_it_names(tmp_path):
+    """A task that escalated tiers mid-run records model_impl as e.g. "sonnet+opus" (see the
+    dispatch skill's Per-task loop). That single row must show up under BOTH tiers in
+    by_model, not vanish because "sonnet+opus" itself is not one of the three known tiers."""
+    ledger = tmp_path / "runs.tsv"
+    rows = [make_row(task="1", model="sonnet+opus", final_status="escalated")]
+    write_ledger(ledger, rows)
+    result = run_stats(["--json"], ledger_path=ledger)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    by_model = {m["model"]: m for m in payload["by_model"]}
+    assert by_model["sonnet"]["runs"] == 1
+    assert by_model["sonnet"]["escalated"] == 1
+    assert by_model["opus"]["runs"] == 1
+    assert by_model["opus"]["escalated"] == 1
+
+
+def test_unrecognized_model_impl_counted_under_other(tmp_path):
+    ledger = tmp_path / "runs.tsv"
+    rows = [make_row(task="1", model="gpt-5", final_status="complete")]
+    write_ledger(ledger, rows)
+    result = run_stats(["--json"], ledger_path=ledger)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    by_model = {m["model"]: m for m in payload["by_model"]}
+    assert by_model["other"]["runs"] == 1
+    assert by_model["other"]["escalated"] == 0
+    assert "gpt-5" not in by_model
+
+
 def test_json_shape_identical_keys_with_and_without_rows(tmp_path):
     """--json must return the same key set whether or not the window has
     rows (zeros and empty lists rather than a shorter payload), with

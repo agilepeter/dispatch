@@ -4,9 +4,10 @@ What matters about a file a plugin ships to every installer: every path it point
 ${CLAUDE_PLUGIN_ROOT} has to exist relative to the repo root, every path it points at under
 ${CLAUDE_SKILL_DIR} has to exist relative to that particular SKILL.md's own directory (the two
 resolve differently, so mixing them up is a real way to ship a dangling reference), every
-SKILL.md's frontmatter has to parse and carry the fields Claude Code requires, and none of
-these files may carry a local path, an internal project name, a commit trailer, or a pinned
-model id out into the world.
+SKILL.md's frontmatter has to parse and carry the fields Claude Code requires, none of the
+skills, templates, the README, or the plugin manifests may carry a local path, an internal
+project name, a commit trailer, or a pinned model id out into the world, and the coordinator's
+own instructions never tell it to push.
 """
 import re
 from pathlib import Path
@@ -20,6 +21,16 @@ SKILL_FILES = sorted(SKILLS_DIR.glob("*/SKILL.md"))
 
 # Skills plus whatever they paste from (currently just skills/dispatch/templates/*.md).
 SHIPPED_FILES = sorted(SKILLS_DIR.rglob("*.md"))
+
+# Everything a fresh install actually receives and everything a browser can load straight off
+# the repo: the skills above, plus the README and the plugin manifests. The leak check runs
+# over this wider set -- a stray local path or the wrong description can land in a manifest or
+# the README just as easily as in a skill file.
+LEAK_CHECK_FILES = (
+    SHIPPED_FILES
+    + [REPO_ROOT / "README.md"]
+    + sorted((REPO_ROOT / ".claude-plugin").glob("*.json"))
+)
 
 PLUGIN_ROOT_REF = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}(/[^\s`\"'()\[\]]+)")
 SKILL_DIR_REF = re.compile(r"\$\{CLAUDE_SKILL_DIR\}(/[^\s`\"'()\[\]]+)")
@@ -119,7 +130,7 @@ def test_skill_name_matches_its_directory():
 
 
 def test_no_owner_specific_or_disallowed_strings():
-    for path in SHIPPED_FILES:
+    for path in LEAK_CHECK_FILES:
         text = read(path)
         for label, pattern in LEAK_PATTERNS.items():
             assert not pattern.search(text), f"{path}: contains {label}"
@@ -142,3 +153,22 @@ def test_plan_template_approved_placeholder_is_not_a_dated_approval():
     # Positive control: a real approved line must still match, so a change that broke the
     # regex into never matching anything would not slip this test by vacuous success.
     assert DATED_APPROVED_LINE.match("Approved: 2026-09-26: yes, ship it")
+
+
+def test_git_push_appears_only_in_the_no_self_push_constraint():
+    """The coordinator itself must never run `git push` -- only an implementer does, on a
+    task's own instruction. The one place "git push" may appear anywhere in a shipped skill
+    or template is the Constraints line stating that rule; a second occurrence anywhere else
+    would be the coordinator's own instructions telling it to push.
+    """
+    occurrences = [
+        (path, lineno, line)
+        for path in SHIPPED_FILES
+        for lineno, line in enumerate(read(path).splitlines(), start=1)
+        if "git push" in line
+    ]
+    assert len(occurrences) == 1, f"expected exactly one 'git push' mention, found {occurrences}"
+    path, lineno, line = occurrences[0]
+    assert "Never runs `git push` itself" in line, (
+        f"the one 'git push' mention is not the no-self-push constraint: {path}:{lineno}: {line!r}"
+    )

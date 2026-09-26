@@ -1,7 +1,6 @@
 ---
 name: dispatch-stats
 description: Show dispatch's rolling health numbers -- run counts, review-loop averages, and the escalation rate -- from the ledger.
-user-invocable: true
 ---
 
 Run the ledger's stats script and show its result as-is, unedited:
