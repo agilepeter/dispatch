@@ -7,8 +7,16 @@ implementer's own report of it. Every task's outcome, including an escalation,
 is logged to a local ledger so loop counts and escalation rates are visible
 over time instead of living only in chat history.
 
-This repo packages that as a Claude Code plugin: a skill plus two small
+This repo packages that as a Claude Code plugin: three skills plus two small
 stdlib scripts for the ledger.
+
+## Status
+
+Shipped: the plugin manifest and marketplace entry, the ledger and stats
+scripts (concurrent-safe ledger creation, validated stats parsing, a stable
+`--json` shape), and the `dispatch`, `dispatch-resume`, and `dispatch-stats`
+skills are all in this repo. CI runs the test suite on Linux, macOS, and
+Windows on every push.
 
 ## Install
 
@@ -17,21 +25,70 @@ claude plugin marketplace add agilepeter/dispatch
 claude plugin install dispatch@agilepeter
 ```
 
+Works out of the box on macOS and Linux. On Windows, use WSL or Git Bash with
+`python3` on PATH -- both ledger scripts are plain Python 3 files.
+
 ## What it does
 
-1. Read an approved plan's tasks (a program design pass first, for multi-file work).
-2. For each task, in order: dispatch an implementer subagent, then a fresh
-   spec-compliance reviewer, then a fresh code-quality reviewer.
-3. Send issues back to the implementer and re-review; only Critical quality
-   issues block, and there is a cap on review loops before escalating.
-4. Gate on runnable evidence (tests/lint/a smoke run), not on the
-   implementer's claim of a green run, before marking a task complete.
+1. Read an approved plan's tasks (a program design pass first, for multi-file
+   work, with one approval).
+2. For each task, in order: dispatch a fresh implementer subagent, then a
+   fresh spec-compliance reviewer, then a fresh code-quality reviewer.
+3. Send issues back to the implementer and re-review; by default only a
+   Critical quality finding blocks, and there's a cap of two review loops per
+   stage before escalating to the user. (A stricter setting is available:
+   fix every finding, Minor included, in the same loop.)
+4. Gate on runnable evidence -- the commands named in the plan's own `Gates:`
+   block -- not on the implementer's claim of a green run, before marking a
+   task complete.
 5. Log the outcome (status, loop counts, reviews, model used) to the ledger.
 6. Move to the next task; stop and ask the user on a blocker or repeated
    review failures.
 
-(Placeholder: the skill itself, which drives this loop, ships in the next
-piece of work on this repo and will be linked from here.)
+## Entry points
+
+| Invocation | Does |
+|---|---|
+| `/dispatch <plan-path>` | Start a plan, or continue one already in progress. |
+| `/dispatch-resume` | Continue an in-progress plan without retyping its path. |
+| `/dispatch-stats` | Show the ledger's rolling health numbers. |
+
+Each also auto-activates: `dispatch` runs on an approved plan of three or more
+checkbox tasks without being invoked by name.
+
+## The plan file
+
+A plan is a Markdown file with a `Gates:` block (the verification commands
+this run checks after every task) and a list of checkbox tasks, each carrying
+its own full spec text. See `skills/dispatch/templates/plan.md` for the full
+template; a minimal one looks like this:
+
+```markdown
+# Plan: add a health endpoint
+
+Approved: 2026-09-26: yes, ship it
+
+Gates:
+pytest -q
+python3 -m py_compile app.py
+
+## Tasks
+
+- [ ] 1. Add a GET /health route that returns {"status": "ok"} with a 200 status code.
+- [ ] 2. Add a test that requests /health and asserts the status code and body.
+- [ ] 3. Wire /health into the existing router and document it in README.md.
+```
+
+## Why a verifier
+
+The loop is only as good as the thing that checks it. Here that's a fresh
+reviewer that reads the actual code instead of trusting a report, and an
+exit-code gate that runs real commands instead of trusting a claim. One real
+dataset, run this way: across 121 tasks in 13 plans between 2026-05-16 and
+2026-09-26, 120 finished and one escalated to a human -- and in 51 of the 121
+(42%) a fresh reviewer still found something to send back after the
+implementer had already reported done (the spec reviewer sent 28 of those
+back; the quality reviewer flagged an Important or Critical problem in 25).
 
 ## The ledger
 
@@ -56,10 +113,9 @@ Every task run appends one TSV row:
 Location: `$DISPATCH_LEDGER` if set, otherwise `~/.claude/dispatch/runs.tsv`.
 The file and its header are created on first use, safely under concurrent
 first writers on every OS. Appending a row is atomic against another
-dispatch-ledger process on Linux and macOS; on Windows, O_APPEND is
-emulated by the C runtime rather than guaranteed atomic by the OS, so two
-sessions appending at the exact same instant there do not carry quite the
-same guarantee.
+dispatch-ledger process on Linux and macOS. On Windows, two sessions
+appending at the same instant can overwrite or split a row; everywhere else,
+each append is atomic.
 
 Append a row directly:
 
@@ -120,9 +176,3 @@ runs: zeros and empty lists rather than a shorter payload.
   zeroed-out keys above rather than in place of them.
 
 Both scripts are stdlib-only Python 3 and need nothing installed.
-
-## Status
-
-In development. This repo currently holds the plugin skeleton and the ledger
-tooling; the skill that actually drives the dispatch loop in a Claude Code
-session is not in this repo yet.
