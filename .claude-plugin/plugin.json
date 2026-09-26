@@ -1,0 +1,11 @@
+{
+  "name": "dispatch",
+  "version": "0.1.0",
+  "description": "Build an approved plan task by task with fresh implementer and reviewer subagents, an exit-code gate and a ledger.",
+  "author": {
+    "name": "Peter Saddington"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/agilepeter/dispatch",
+  "repository": "https://github.com/agilepeter/dispatch"
+}

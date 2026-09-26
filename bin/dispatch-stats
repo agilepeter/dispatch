@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+"""Read the dispatch ledger and print rolling N-day stats.
+
+Stdlib-only port of the private automations/dispatch/summarize.py, plus a
+--json flag the original does not have. See README.md for the ledger's
+column reference.
+"""
+import argparse
+import json
+import os
+import sys
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+DEFAULT_DAYS = 30
+
+HEADER = [
+    "ts", "plan_path", "task_idx", "task_text", "impl_status", "impl_loops",
+    "spec_review", "spec_loops", "quality_review", "quality_loops",
+    "final_status", "model_impl", "notes",
+]
+
+MODEL_ORDER = ["haiku", "sonnet", "opus"]
+
+
+def default_ledger_path():
+    env = os.environ.get("DISPATCH_LEDGER")
+    if env:
+        return Path(env)
+    return Path.home() / ".claude" / "dispatch" / "runs.tsv"
+
+
+def parse_args(argv=None):
+    p = argparse.ArgumentParser(prog="dispatch-stats", description="Dispatch run stats")
+    p.add_argument("--days", type=int, default=DEFAULT_DAYS)
+    p.add_argument("--input", type=Path, default=None, help="Defaults to $DISPATCH_LEDGER or ~/.claude/dispatch/runs.tsv")
+    fmt = p.add_mutually_exclusive_group()
+    fmt.add_argument("--oneline", action="store_true")
+    fmt.add_argument("--json", action="store_true")
+    return p.parse_args(argv)
+
+
+def load_rows(path, cutoff):
+    """Return (rows, skipped). A missing or empty ledger yields ([], 0)
+    rather than raising, so a fresh install never crashes this tool.
+
+    Note on the port: the original read rows with csv.DictReader and checked
+    `len(row) != 13`. DictReader pads a short row's missing trailing fields
+    with None instead of shrinking the dict, so that check only ever caught
+    rows with too MANY fields, not too few -- a short row would have sailed
+    through and crashed later on int(None). This reads the raw fields with
+    csv.reader and checks the actual column count before building the row
+    dict, which catches both directions and is the only behavioral change
+    from summarize.py.
+    """
+    if not path.exists():
+        return [], 0
+
+    import csv
+
+    skipped = 0
+    rows = []
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.reader(f, delimiter="\t")
+        try:
+            header = next(reader)
+        except StopIteration:
+            return [], 0
+        for fields in reader:
+            if len(fields) != len(header):
+                skipped += 1
+                continue
+            row = dict(zip(header, fields))
+            try:
+                row_ts = datetime.fromisoformat(row["ts"].rstrip("Z")).replace(tzinfo=timezone.utc)
+            except (ValueError, KeyError):
+                skipped += 1
+                continue
+            if row_ts >= cutoff:
+                rows.append(row)
+    return rows, skipped
+
+
+def pct(num, denom):
+    if denom == 0:
+        return 0
+    return round(num / denom * 100)
+
+
+def avg(values):
+    if not values:
+        return 0.0
+    return round(sum(values) / len(values), 1)
+
+
+def compute_stats(rows, days, since):
+    total = len(rows)
+    impl_loops = [int(r["impl_loops"]) for r in rows]
+    spec_loops = [int(r["spec_loops"]) for r in rows]
+    quality_loops = [int(r["quality_loops"]) for r in rows]
+
+    spec_fails = sum(1 for r in rows if r["spec_review"] == "FAIL")
+    quality_criticals = sum(1 for r in rows if r["quality_review"] == "CRITICAL")
+    escalations = sum(1 for r in rows if r["final_status"] == "escalated")
+
+    model_counts = defaultdict(int)
+    model_escalations = defaultdict(int)
+    for r in rows:
+        m = r["model_impl"]
+        model_counts[m] += 1
+        if r["final_status"] == "escalated":
+            model_escalations[m] += 1
+
+    plan_runs = defaultdict(int)
+    plan_escalations = defaultdict(int)
+    for r in rows:
+        p = r["plan_path"]
+        plan_runs[p] += 1
+        if r["final_status"] == "escalated":
+            plan_escalations[p] += 1
+
+    top_plans = sorted(
+        [(p, plan_escalations[p], plan_runs[p]) for p in plan_escalations if plan_escalations[p] >= 1],
+        key=lambda x: (-x[1], -x[2]),
+    )[:5]
+
+    return {
+        "days": days,
+        "since": since,
+        "total_runs": total,
+        "avg_impl_loops": avg(impl_loops),
+        "avg_spec_loops": avg(spec_loops),
+        "avg_quality_loops": avg(quality_loops),
+        "spec_fail_count": spec_fails,
+        "spec_fail_rate_pct": pct(spec_fails, total),
+        "quality_critical_count": quality_criticals,
+        "quality_critical_rate_pct": pct(quality_criticals, total),
+        "escalation_count": escalations,
+        "escalation_rate_pct": pct(escalations, total),
+        "by_model": [
+            {
+                "model": m,
+                "runs": model_counts[m],
+                "escalated": model_escalations[m],
+                "escalation_rate_pct": pct(model_escalations[m], model_counts[m]),
+            }
+            for m in MODEL_ORDER
+            if model_counts[m]
+        ],
+        "top_failing_plans": [
+            {"plan_path": p, "escalations": esc, "runs": runs} for p, esc, runs in top_plans
+        ],
+    }
+
+
+def print_oneline(stats):
+    tier_parts = [f"{m['model']} {m['escalation_rate_pct']}%" for m in stats["by_model"]]
+    tiers_str = ", ".join(tier_parts)
+    print(
+        f"Dispatch ({stats['days']}d): {stats['total_runs']} runs / {stats['avg_spec_loops']} avg spec_loops"
+        f" / {stats['escalation_count']} escalated ({stats['escalation_rate_pct']}%)"
+        + (f" — {tiers_str}" if tiers_str else "")
+    )
+
+
+def print_full(stats):
+    rule = "─" * 49
+    print(f"Dispatch health — last {stats['days']} days (since {stats['since']})")
+    print(rule)
+    print(f"Total task runs:        {stats['total_runs']}")
+    print(f"Avg impl_loops:         {stats['avg_impl_loops']}")
+    print(f"Avg spec_loops:         {stats['avg_spec_loops']}")
+    print(f"Avg quality_loops:      {stats['avg_quality_loops']}")
+    print(f"Spec FAIL rate:         {stats['spec_fail_rate_pct']}% ({stats['spec_fail_count']}/{stats['total_runs']})")
+    print(f"Quality CRITICAL rate:  {stats['quality_critical_rate_pct']}% ({stats['quality_critical_count']}/{stats['total_runs']})")
+    print(f"Escalation rate:        {stats['escalation_rate_pct']}% ({stats['escalation_count']}/{stats['total_runs']})")
+
+    if stats["by_model"]:
+        print()
+        print("By model tier:")
+        for m in stats["by_model"]:
+            print(f"  {m['model']:<8}{m['runs']} runs   {m['escalated']} escalated   ({m['escalation_rate_pct']}%)")
+
+    if stats["top_failing_plans"]:
+        print()
+        print("Top failing plans (by escalation count):")
+        for p in stats["top_failing_plans"]:
+            esc_word = "escalations" if p["escalations"] != 1 else "escalation "
+            run_word = "runs" if p["runs"] != 1 else "run "
+            print(f"  {p['plan_path']:<24}{p['escalations']} {esc_word} / {p['runs']} {run_word}")
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    input_path = args.input or default_ledger_path()
+
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=args.days)
+    since = cutoff.strftime("%Y-%m-%d")
+
+    rows, skipped = load_rows(input_path, cutoff)
+
+    if not rows:
+        if args.json:
+            print(json.dumps({
+                "days": args.days,
+                "since": since,
+                "total_runs": 0,
+                "message": "No dispatch runs logged yet.",
+                "skipped_rows": skipped,
+            }, indent=2))
+        else:
+            print("No dispatch runs logged yet.")
+        if skipped:
+            print(f"{skipped} malformed row(s) skipped.", file=sys.stderr)
+        return 0
+
+    stats = compute_stats(rows, args.days, since)
+    stats["skipped_rows"] = skipped
+
+    if args.json:
+        print(json.dumps(stats, indent=2))
+    elif args.oneline:
+        print_oneline(stats)
+    else:
+        print_full(stats)
+
+    if skipped:
+        print(f"{skipped} malformed row(s) skipped.", file=sys.stderr)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

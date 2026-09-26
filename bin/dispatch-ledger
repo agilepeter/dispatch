@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""Append one row to the dispatch ledger.
+
+Stdlib only, so it runs on any machine with python3 on PATH. See README.md
+for the ledger's column reference and where the file lives.
+"""
+import argparse
+import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+HEADER = [
+    "ts", "plan_path", "task_idx", "task_text", "impl_status", "impl_loops",
+    "spec_review", "spec_loops", "quality_review", "quality_loops",
+    "final_status", "model_impl", "notes",
+]
+
+# Strict enums, spelled exactly as the private dispatch skill's Stage 5 field
+# reference does. impl_status and final_status are closed sets in real usage,
+# so a typo here is almost certainly a caller bug and is rejected outright.
+IMPL_STATUS_CHOICES = ["DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED"]
+FINAL_STATUS_CHOICES = ["complete", "escalated", "user"]
+
+# spec_review and quality_review are NOT closed sets in the real ledger: the
+# skill's field reference documents PASS/FAIL and PASS/CRITICAL/IMPORTANT/
+# SKIPPED, but real rows also carry free-form annotations such as
+# "FAIL→PASS" (recovered after a re-review) and "n/a (docs task; ...)"
+# (a non-code task where the stage does not apply). Rejecting those would
+# reject exactly the rows the skill actually produces, so these two fields
+# only require non-empty text.
+
+
+def default_ledger_path():
+    env = os.environ.get("DISPATCH_LEDGER")
+    if env:
+        return Path(env)
+    return Path.home() / ".claude" / "dispatch" / "runs.tsv"
+
+
+def sanitize(value):
+    """Collapse tabs/newlines to single spaces so a row is always exactly
+    len(HEADER) columns, matching the skill's own field-reference rule."""
+    return (
+        value.replace("\t", " ")
+        .replace("\r\n", " ")
+        .replace("\n", " ")
+        .replace("\r", " ")
+    )
+
+
+def non_negative_int(raw):
+    try:
+        value = int(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {raw!r}")
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"expected a non-negative integer, got {value}")
+    return value
+
+
+def non_empty(raw):
+    if not raw.strip():
+        raise argparse.ArgumentTypeError("must not be empty")
+    return raw
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="dispatch-ledger",
+        description="Append one run to the dispatch ledger.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    append = sub.add_parser("append", help="Append one row to the ledger.")
+    append.add_argument(
+        "--plan", required=True, type=non_empty,
+        help="Plan file path, or a sentinel such as inline:<slug> for a plan with no file.",
+    )
+    append.add_argument(
+        "--task", required=True, type=non_empty,
+        help="Task index within the plan. Free text: real plans use values like 3, 17b, 13+14.",
+    )
+    append.add_argument("--text", required=True, type=non_empty, help="Task spec text or a summary of it.")
+    append.add_argument("--impl-status", required=True, choices=IMPL_STATUS_CHOICES)
+    append.add_argument("--impl-loops", required=True, type=non_negative_int)
+    append.add_argument(
+        "--spec-review", required=True, type=non_empty,
+        help="PASS, FAIL, or a free-form outcome such as 'FAIL→PASS' or 'n/a (...)'.",
+    )
+    append.add_argument("--spec-loops", required=True, type=non_negative_int)
+    append.add_argument(
+        "--quality-review", required=True, type=non_empty,
+        help="PASS, CRITICAL, IMPORTANT, SKIPPED, or a free-form outcome such as 'n/a (...)'.",
+    )
+    append.add_argument("--quality-loops", required=True, type=non_negative_int)
+    append.add_argument("--final-status", required=True, choices=FINAL_STATUS_CHOICES)
+    append.add_argument(
+        "--model", required=True, type=non_empty,
+        help="Model tier(s) used, e.g. sonnet, opus, sonnet+haiku.",
+    )
+    append.add_argument("--notes", default="", help="Free text. Defaults to '-' when omitted or empty.")
+
+    return parser
+
+
+def append_row(path, fields):
+    """Write one TSV row.
+
+    Atomicity: this opens the file with O_APPEND and writes the whole encoded
+    line in a single os.write() call, rather than using a lock file. A lock
+    file needs cleanup a crashed writer will never perform (a stale lock would
+    then wedge every future append), whereas O_APPEND has the kernel place
+    each writer's data at the file's current end-of-file for every write()
+    call, and POSIX guarantees a single write() to a regular file is not
+    interleaved with another process's writes to the same file -- true on both
+    Linux and macOS, the two OSes this ships for. Every row here is well under
+    a page in size, so it is always exactly one write() call.
+
+    Creating the ledger and its header has its own race: two processes could
+    both see "file does not exist" and both try to write a header. That is
+    closed with O_CREAT|O_EXCL: only one process can win the create, and it
+    writes the header plus its own row in the same write() call; the loser
+    gets FileExistsError and falls back to a plain append.
+    """
+    line = "\t".join(sanitize(f) for f in fields) + "\n"
+    header_line = "\t".join(HEADER) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError:
+        fd = os.open(str(path), os.O_WRONLY | os.O_APPEND)
+        try:
+            os.write(fd, line.encode("utf-8"))
+        finally:
+            os.close(fd)
+    else:
+        try:
+            os.write(fd, (header_line + line).encode("utf-8"))
+        finally:
+            os.close(fd)
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    notes = args.notes if args.notes.strip() else "-"
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    fields = [
+        ts, args.plan, args.task, args.text, args.impl_status, str(args.impl_loops),
+        args.spec_review, str(args.spec_loops), args.quality_review, str(args.quality_loops),
+        args.final_status, args.model, notes,
+    ]
+
+    if len(fields) != len(HEADER):
+        print(
+            f"dispatch-ledger: internal error: built {len(fields)} fields, expected {len(HEADER)}",
+            file=sys.stderr,
+        )
+        return 1
+
+    ledger_path = default_ledger_path()
+    try:
+        append_row(ledger_path, fields)
+    except OSError as exc:
+        print(f"dispatch-ledger: could not write to {ledger_path}: {exc}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

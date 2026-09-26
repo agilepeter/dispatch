@@ -1,0 +1,14 @@
+{
+  "name": "agilepeter",
+  "description": "Peter Saddington's personal Claude Code plugin marketplace.",
+  "owner": {
+    "name": "Peter Saddington"
+  },
+  "plugins": [
+    {
+      "name": "dispatch",
+      "source": "./",
+      "description": "Build an approved plan task by task with fresh implementer and reviewer subagents, an exit-code gate and a ledger."
+    }
+  ]
+}
