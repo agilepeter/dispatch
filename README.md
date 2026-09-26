@@ -54,7 +54,12 @@ Every task run appends one TSV row:
 | `notes` | free text, `-` if empty |
 
 Location: `$DISPATCH_LEDGER` if set, otherwise `~/.claude/dispatch/runs.tsv`.
-The file and its header are created on first use.
+The file and its header are created on first use, safely under concurrent
+first writers on every OS. Appending a row is atomic against another
+dispatch-ledger process on Linux and macOS; on Windows, O_APPEND is
+emulated by the C runtime rather than guaranteed atomic by the OS, so two
+sessions appending at the exact same instant there do not carry quite the
+same guarantee.
 
 Append a row directly:
 
@@ -74,6 +79,45 @@ bin/dispatch-stats --oneline       # one-line summary
 bin/dispatch-stats --json          # machine-readable
 bin/dispatch-stats --days 7 --input /path/to/runs.tsv
 ```
+
+`--json` always returns the same keys, whether or not the window has any
+runs: zeros and empty lists rather than a shorter payload.
+
+```json
+{
+  "days": 30,
+  "since": "2026-08-27",
+  "total_runs": 2,
+  "avg_impl_loops": 1.0,
+  "avg_spec_loops": 1.0,
+  "avg_quality_loops": 0.0,
+  "spec_fail_count": 0,
+  "spec_fail_rate_pct": 0,
+  "quality_critical_count": 0,
+  "quality_critical_rate_pct": 0,
+  "escalation_count": 0,
+  "escalation_rate_pct": 0,
+  "by_model": [
+    {"model": "sonnet", "runs": 2, "escalated": 0, "escalation_rate_pct": 0}
+  ],
+  "top_failing_plans": [],
+  "skipped_rows": 0
+}
+```
+
+- `days` / `since`: the requested window and the UTC date it starts from.
+- `total_runs` / `skipped_rows`: rows counted vs. rows read but discarded
+  (wrong column count, an unparseable timestamp, or a bad loop-count value).
+- `avg_impl_loops` / `avg_spec_loops` / `avg_quality_loops`,
+  `spec_fail_count` / `spec_fail_rate_pct`, `quality_critical_count` /
+  `quality_critical_rate_pct`, `escalation_count` / `escalation_rate_pct`:
+  aggregate stats over `total_runs`.
+- `by_model`: one entry per model tier seen, each with its own run count,
+  escalation count, and escalation rate.
+- `top_failing_plans`: up to 5 plans ranked by escalation count, each with
+  its own escalation and run counts.
+- `message`: present only when `total_runs` is 0, alongside the same
+  zeroed-out keys above rather than in place of them.
 
 Both scripts are stdlib-only Python 3 and need nothing installed.
 

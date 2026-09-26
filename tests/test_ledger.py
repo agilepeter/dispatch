@@ -4,11 +4,14 @@ Every test points DISPATCH_LEDGER (or, for the one default-path test, HOME)
 at a pytest tmp_path. Nothing here reads or writes the real ~/.claude.
 """
 import csv
+import importlib.util
 import os
+import stat
 import subprocess
 import sys
 import threading
 from datetime import datetime, timedelta, timezone
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
 import pytest
@@ -36,6 +39,18 @@ BASE_APPEND_ARGS = [
     "--final-status", "complete",
     "--model", "sonnet",
 ]
+
+
+def load_ledger_module():
+    """Import bin/dispatch-ledger (no .py suffix, so it needs an explicit
+    loader) so tests can call its internal functions directly, for the
+    race simulation below where a deterministic call order matters more
+    than a real black-box subprocess invocation would let us control."""
+    loader = SourceFileLoader("dispatch_ledger_under_test", str(LEDGER_SCRIPT))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
 
 
 def run_ledger(args, ledger_path=None, env_overrides=None, unset=()):
@@ -71,6 +86,7 @@ def assert_one_line_stderr(result):
     return lines[0]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX executable-bit semantics don't apply on Windows")
 def test_script_is_executable():
     assert os.access(LEDGER_SCRIPT, os.X_OK)
 
@@ -102,6 +118,14 @@ def test_creates_parent_directory(tmp_path):
     result = run_ledger(BASE_APPEND_ARGS, ledger_path=ledger)
     assert result.returncode == 0, result.stderr
     assert ledger.exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file mode bits don't apply on Windows")
+def test_ledger_created_with_mode_0600(tmp_path):
+    ledger = tmp_path / "runs.tsv"
+    run_ledger(BASE_APPEND_ARGS, ledger_path=ledger)
+    mode = stat.S_IMODE(ledger.stat().st_mode)
+    assert mode == 0o600, oct(mode)
 
 
 def test_tabs_and_newlines_replaced_with_spaces(tmp_path):
@@ -141,6 +165,27 @@ def test_unicode_notes_roundtrip(tmp_path):
     assert result.returncode == 0, result.stderr
     rows = read_rows(ledger)
     assert rows[1][-1] == note
+
+
+def test_invalid_utf8_argv_byte_is_replaced_not_crashed(tmp_path):
+    """sys.argv is decoded with surrogateescape, so an argument holding a
+    byte that is not valid UTF-8 (a mangled locale, a stray byte from
+    another encoding) carries a lone surrogate codepoint that a strict
+    .encode("utf-8") cannot re-encode. One bad byte in a caller's argument
+    must not crash the append; it should come through as U+FFFD."""
+    ledger = tmp_path / "runs.tsv"
+    argv = [sys.executable, str(LEDGER_SCRIPT)] + list(BASE_APPEND_ARGS) + ["--notes", "placeholder"]
+    argv_bytes = [os.fsencode(a) if isinstance(a, str) else a for a in argv]
+    argv_bytes[argv.index("--notes") + 1] = b"caf\xe9 with an invalid byte"
+
+    env = dict(os.environ)
+    env["DISPATCH_LEDGER"] = str(ledger)
+    result = subprocess.run(argv_bytes, capture_output=True, env=env)
+    assert result.returncode == 0, result.stderr
+
+    content = ledger.read_text(encoding="utf-8")
+    assert "caf� with an invalid byte" in content
+    assert "\xe9" not in content  # the raw invalid byte must not survive as-is
 
 
 def test_long_notes_field_not_truncated(tmp_path):
@@ -327,3 +372,54 @@ def test_concurrent_appends_produce_one_header_and_n_clean_rows(tmp_path):
         assert len(row) == 13
     seen_tasks = sorted(int(r[2]) for r in data_rows)
     assert seen_tasks == list(range(n))
+
+
+def test_first_write_race_header_stays_on_line_one(tmp_path):
+    """Deterministic simulation of the exact interleaving that used to let
+    a header-plus-row write at offset 0 clobber a row appended in the gap:
+    call the internal functions directly in the racy order (create, then a
+    second "racer" also finds the file already there, THEN both rows get
+    appended) rather than relying on OS thread-scheduling timing."""
+    mod = load_ledger_module()
+    ledger = tmp_path / "runs.tsv"
+
+    mod.ensure_ledger_header(ledger)  # "process A" creates the header
+    mod.ensure_ledger_header(ledger)  # "process B" finds it already there
+    mod.append_row(ledger, ["ts-a", "plan-a", "1", "text-a", "DONE", "1", "PASS", "1", "PASS", "0", "complete", "sonnet", "-"])
+    mod.append_row(ledger, ["ts-b", "plan-b", "2", "text-b", "DONE", "1", "PASS", "1", "PASS", "0", "complete", "sonnet", "-"])
+
+    lines = ledger.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "\t".join(mod.HEADER)
+    assert len(lines) == 3
+    assert lines[1].startswith("ts-a\t")
+    assert lines[2].startswith("ts-b\t")
+
+
+def test_torn_last_line_does_not_corrupt_next_append(tmp_path):
+    """A ledger whose last line has no trailing newline (a previous short
+    write) must not swallow the next append into the same line: the guard
+    detects the missing newline and inserts one first, so the new row
+    lands intact on its own line and dispatch-stats counts it."""
+    mod = load_ledger_module()
+    ledger = tmp_path / "runs.tsv"
+    mod.ensure_ledger_header(ledger)
+    with open(ledger, "a", encoding="utf-8") as f:
+        f.write("torn-ts\tplan\t1\ttext\tDONE\t1\tPASS\t1\tPASS\t0\tcomplete\tsonnet\t-")  # no trailing \n
+
+    new_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    mod.append_row(ledger, [new_ts, "plan-new", "2", "text-new", "DONE", "1", "PASS", "1", "PASS", "0", "complete", "sonnet", "-"])
+
+    lines = ledger.read_text(encoding="utf-8").splitlines()
+    assert any(line.startswith("torn-ts\t") for line in lines)
+    new_line = next(line for line in lines if line.startswith(new_ts + "\t"))
+    assert new_line.count("\t") == 12  # 13 fields, intact and not glued to the torn line
+
+    stats_script = REPO_ROOT / "bin" / "dispatch-stats"
+    env = dict(os.environ)
+    env["DISPATCH_LEDGER"] = str(ledger)
+    result = subprocess.run([sys.executable, str(stats_script), "--json"], capture_output=True, text=True, env=env)
+    assert result.returncode == 0, result.stderr
+    import json
+    payload = json.loads(result.stdout)
+    assert payload["total_runs"] == 1  # only the new, well-formed row
+    assert payload["skipped_rows"] == 1  # the torn line (bad "ts" value), counted, not crashed

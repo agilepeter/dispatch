@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Read the dispatch ledger and print rolling N-day stats.
+"""Print rolling N-day stats from a dispatch ledger.
 
-Stdlib-only port of the private automations/dispatch/summarize.py, plus a
---json flag the original does not have. See README.md for the ledger's
-column reference.
+Stdlib only, so it runs on any machine with python3 on PATH, plus a --json
+flag for machine consumption. See README.md for the ledger's column
+reference and the shape of --json output.
 """
 import argparse
 import csv
@@ -25,6 +25,20 @@ HEADER = [
 MODEL_ORDER = ["haiku", "sonnet", "opus"]
 
 
+class OneLineArgumentParser(argparse.ArgumentParser):
+    """Bad input must fail loud but short: one line on stderr, no multi-line
+    usage block. Same override as bin/dispatch-ledger's copy of this class;
+    duplicated rather than imported so each script in bin/ stays a single
+    standalone file with no sibling-import setup needed to run it."""
+
+    def error(self, message):
+        self.exit(2, f"{self.prog}: error: {message}\n")
+
+
+class LedgerFormatError(Exception):
+    """Raised when the ledger's header does not match the expected columns."""
+
+
 def default_ledger_path():
     env = os.environ.get("DISPATCH_LEDGER")
     if env:
@@ -32,9 +46,19 @@ def default_ledger_path():
     return Path.home() / ".claude" / "dispatch" / "runs.tsv"
 
 
+def non_negative_int(raw):
+    try:
+        value = int(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {raw!r}")
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"expected a non-negative integer, got {value}")
+    return value
+
+
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(prog="dispatch-stats", description="Dispatch run stats")
-    p.add_argument("--days", type=int, default=DEFAULT_DAYS)
+    p = OneLineArgumentParser(prog="dispatch-stats", description="Dispatch run stats")
+    p.add_argument("--days", type=non_negative_int, default=DEFAULT_DAYS)
     p.add_argument("--input", type=Path, default=None, help="Defaults to $DISPATCH_LEDGER or ~/.claude/dispatch/runs.tsv")
     fmt = p.add_mutually_exclusive_group()
     fmt.add_argument("--oneline", action="store_true")
@@ -42,45 +66,87 @@ def parse_args(argv=None):
     return p.parse_args(argv)
 
 
+def parse_ts(raw):
+    """Parse an ISO-8601 timestamp and return it in UTC.
+
+    A trailing "Z" means UTC but is stripped before parsing, since not
+    every Python version this targets accepts it in fromisoformat()
+    directly; the remainder is then treated as UTC. A timestamp with an
+    explicit numeric offset (e.g. "+05:00") parses as an aware datetime
+    that already carries that offset, and converting it with astimezone()
+    is required there -- relabeling its tzinfo as UTC without converting
+    would silently treat "14:03+05:00" as if it were "14:03Z", nine hours
+    off. Only a genuinely naive timestamp (no offset, no trailing Z) is
+    assumed to already be UTC.
+    """
+    if raw.endswith("Z"):
+        dt = datetime.fromisoformat(raw[:-1]).replace(tzinfo=timezone.utc)
+    else:
+        dt = datetime.fromisoformat(raw)
+        dt = dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def load_rows(path, cutoff):
     """Return (rows, skipped). A missing or empty ledger yields ([], 0)
-    rather than raising, so a fresh install never crashes this tool.
+    rather than raising, so a fresh install never crashes this tool. An
+    unreadable path (a directory, permission denied) raises OSError, and a
+    ledger whose header does not match the expected columns raises
+    LedgerFormatError; main() turns either into a one-line stderr message
+    and exit 1, since neither is a single bad row -- the whole file is
+    unusable.
 
-    Note on the port: the original read rows with csv.DictReader and checked
-    `len(row) != 13`. DictReader pads a short row's missing trailing fields
-    with None instead of shrinking the dict, so that check only ever caught
-    rows with too MANY fields, not too few -- a short row would have sailed
-    through and crashed later on int(None). This reads the raw fields with
-    csv.reader and checks the actual column count before building the row
-    dict, which catches both directions and is the only behavioral change
-    from summarize.py.
+    Rows are read with csv.reader rather than csv.DictReader, and the
+    column count is checked against the header BEFORE building a row dict:
+    checking a DictReader row's own length would only ever catch a row
+    with too MANY fields, because DictReader pads a short row's missing
+    trailing fields with None instead of shrinking the dict -- a short row
+    would sail through that check and then crash later trying to parse
+    None as a number. Checking the raw field count first catches both
+    directions, and a genuinely blank line (no fields at all) is not
+    treated as a malformed row, just skipped silently.
+
+    A row's loop-count fields are parsed and range-checked here too, so a
+    row with garbage in a numeric column is counted as skipped like any
+    other bad row instead of crashing the report several stages later.
     """
     if not path.exists():
         return [], 0
 
     skipped = 0
     rows = []
-    with open(path, newline="", encoding="utf-8") as f:
-        # quoting=QUOTE_NONE: the writer (dispatch-ledger's sanitize()) already
-        # guarantees no field holds a tab or newline, so a plain split on the
-        # delimiter is correct and sufficient. Without it, csv's default
-        # quoting rules treat a field that STARTS with a literal '"' (e.g. a
-        # note beginning `"starts with a quote`) as an open quote and read
-        # through the following newline(s) looking for its close, silently
-        # merging following rows into that field -- reproduced against a real
-        # 3-row fixture as total_runs=2, skipped_rows=0 before this fix.
+    # utf-8-sig strips a leading BOM if one is present, so a ledger saved by
+    # an editor that adds one still reads its first header cell as "ts"
+    # rather than "﻿ts", which would otherwise always fail the header
+    # check below.
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        # quoting=QUOTE_NONE: the writer (dispatch-ledger's sanitize())
+        # already guarantees no field holds a tab or newline, so a plain
+        # split on the delimiter is correct and sufficient. Without it,
+        # csv's default quoting rules treat a field that STARTS with a
+        # literal '"' as an open quote and read through following lines
+        # looking for its close, silently merging other rows into it.
         reader = csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE)
         try:
             header = next(reader)
         except StopIteration:
             return [], 0
+        if header != HEADER:
+            raise LedgerFormatError(
+                f"dispatch-stats: {path}: header does not match the expected {len(HEADER)} columns"
+            )
         for fields in reader:
+            if not fields:
+                continue  # a blank line is not a malformed row
             if len(fields) != len(header):
                 skipped += 1
                 continue
             row = dict(zip(header, fields))
             try:
-                row_ts = datetime.fromisoformat(row["ts"].rstrip("Z")).replace(tzinfo=timezone.utc)
+                row_ts = parse_ts(row["ts"])
+                for key in ("impl_loops", "spec_loops", "quality_loops"):
+                    if int(row[key]) < 0:
+                        raise ValueError(f"{key} must be non-negative")
             except (ValueError, KeyError):
                 skipped += 1
                 continue
@@ -206,28 +272,24 @@ def main(argv=None):
     cutoff = now - timedelta(days=args.days)
     since = cutoff.strftime("%Y-%m-%d")
 
-    rows, skipped = load_rows(input_path, cutoff)
-
-    if not rows:
-        if args.json:
-            print(json.dumps({
-                "days": args.days,
-                "since": since,
-                "total_runs": 0,
-                "message": "No dispatch runs logged yet.",
-                "skipped_rows": skipped,
-            }, indent=2))
-        else:
-            print("No dispatch runs logged yet.")
-        if skipped:
-            print(f"{skipped} malformed row(s) skipped.", file=sys.stderr)
-        return 0
+    try:
+        rows, skipped = load_rows(input_path, cutoff)
+    except LedgerFormatError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(f"dispatch-stats: {input_path}: {exc}", file=sys.stderr)
+        return 1
 
     stats = compute_stats(rows, args.days, since)
     stats["skipped_rows"] = skipped
+    if not rows:
+        stats["message"] = "No dispatch runs logged yet."
 
     if args.json:
         print(json.dumps(stats, indent=2))
+    elif not rows:
+        print(stats["message"])
     elif args.oneline:
         print_oneline(stats)
     else:

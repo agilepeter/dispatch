@@ -7,6 +7,7 @@ for the ledger's column reference and where the file lives.
 import argparse
 import os
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,19 +17,20 @@ HEADER = [
     "final_status", "model_impl", "notes",
 ]
 
-# Strict enums, spelled exactly as the private dispatch skill's Stage 5 field
-# reference does. impl_status and final_status are closed sets in real usage,
-# so a typo here is almost certainly a caller bug and is rejected outright.
+# Strict enums for impl_status and final_status: both are closed sets in
+# practice, so a typo here is almost certainly a caller bug and is rejected
+# outright.
 IMPL_STATUS_CHOICES = ["DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED"]
 FINAL_STATUS_CHOICES = ["complete", "escalated", "user"]
 
-# spec_review and quality_review are NOT closed sets in the real ledger: the
-# skill's field reference documents PASS/FAIL and PASS/CRITICAL/IMPORTANT/
-# SKIPPED, but real rows also carry free-form annotations such as
-# "FAIL->PASS" (recovered after a re-review) and "n/a (docs task; ...)"
-# (a non-code task where the stage does not apply). Rejecting those would
-# reject exactly the rows the skill actually produces, so these two fields
-# only require non-empty text.
+# spec_review and quality_review are NOT closed sets: real runs record
+# free-form annotations alongside the usual PASS/FAIL/CRITICAL/IMPORTANT/
+# SKIPPED values, such as "FAIL->PASS" (recovered after a re-review) or
+# "n/a (docs task; ...)" (a stage that does not apply to a non-code task).
+# Rejecting anything outside a fixed enum would reject legitimate outcomes,
+# so these two fields only require non-empty text.
+
+_O_BINARY = getattr(os, "O_BINARY", 0)  # 0 on POSIX; see append_row().
 
 
 class OneLineArgumentParser(argparse.ArgumentParser):
@@ -59,7 +61,20 @@ def default_ledger_path():
 
 def sanitize(value):
     """Collapse tabs/newlines to single spaces so a row is always exactly
-    len(HEADER) columns, matching the skill's own field-reference rule."""
+    len(HEADER) columns, and launder any byte sequence argv could not
+    decode as UTF-8.
+
+    sys.argv is decoded with the surrogateescape error handler, so an
+    argument built from bytes that are not valid UTF-8 (a mangled locale, a
+    byte copied in from another encoding) carries lone surrogate
+    codepoints. Encoding that straight back to UTF-8 -- which every row
+    write in this file does -- raises UnicodeEncodeError, so one bad byte
+    in a caller's argument would otherwise crash the whole append.
+    Round-tripping through a surrogateescape encode and then a replace
+    decode turns each invalid byte into U+FFFD and leaves every valid
+    character untouched, so the row is still recorded.
+    """
+    value = value.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
     return (
         value.replace("\t", " ")
         .replace("\r\n", " ")
@@ -123,42 +138,123 @@ def build_parser():
     return parser
 
 
-def append_row(path, fields):
-    """Write one TSV row.
+def write_all(fd, data):
+    """os.write can perform a short write (a full disk, a large write cut
+    short by a signal); looping until every byte lands, and raising if a
+    call makes zero progress instead of spinning forever, turns a partial
+    write into a clean failure (caught by main() as a one-line exit 1)
+    instead of a torn row that the next append would glue onto."""
+    view = memoryview(data)
+    while view:
+        n = os.write(fd, view)
+        if n == 0:
+            raise OSError("write() made no progress (disk full?)")
+        view = view[n:]
 
-    Atomicity: this opens the file with O_APPEND and writes the whole encoded
-    line in a single os.write() call, rather than using a lock file. A lock
-    file needs cleanup a crashed writer will never perform (a stale lock would
-    then wedge every future append), whereas O_APPEND has the kernel place
-    each writer's data at the file's current end-of-file for every write()
-    call, and POSIX guarantees a single write() to a regular file is not
-    interleaved with another process's writes to the same file -- true on both
-    Linux and macOS, the two OSes this ships for. Every row here is well under
-    a page in size, so it is always exactly one write() call.
 
-    Creating the ledger and its header has its own race: two processes could
-    both see "file does not exist" and both try to write a header. That is
-    closed with O_CREAT|O_EXCL: only one process can win the create, and it
-    writes the header plus its own row in the same write() call; the loser
-    gets FileExistsError and falls back to a plain append.
+def ensure_ledger_header(path):
+    """Create the ledger with just its header if it does not already exist.
+
+    A single process using O_CREAT|O_EXCL to write header-plus-row together
+    at offset 0 is not enough: that first write is not itself an append, so
+    a second process's row -- appended in the gap between the first process
+    opening the file and finishing that write -- can land before the header
+    write completes, or the header can end up on line 2. Splitting "create
+    the file" from "write a row" into two separately-atomic steps closes
+    this: write the header to a temp file in the same directory (mode 0600,
+    so the fallback below matches), then os.link() it into place.
+    Hard-linking is atomic and fails with FileExistsError if the
+    destination already exists, so exactly one process's temp file ever
+    becomes the ledger, no matter how many processes race here. Every row
+    after that -- including the very first one, from whichever process won
+    -- goes through append_row()'s single O_APPEND path, so there is only
+    one way any row is ever written.
     """
-    line = "\t".join(sanitize(f) for f in fields) + "\n"
-    header_line = "\t".join(HEADER) + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
+    header_line = ("\t".join(HEADER) + "\n").encode("utf-8")
 
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=".dispatch-ledger-tmp-")
     try:
-        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
-    except FileExistsError:
-        fd = os.open(str(path), os.O_WRONLY | os.O_APPEND)
+        write_all(fd, header_line)
+        os.close(fd)
+        fd = -1
         try:
-            os.write(fd, line.encode("utf-8"))
-        finally:
+            os.link(tmp_name, str(path))
+        except FileExistsError:
+            pass  # another process's temp file won the race; the ledger exists
+        except OSError:
+            # No hard-link support on this filesystem (some network mounts).
+            # Narrower fallback: an exclusive create still guarantees at
+            # most one process's open() succeeds, but a second process here
+            # blocks behind the filesystem's own open() call instead of one
+            # atomic link(), so the guarantee against interleaving with a
+            # concurrent row-append is weaker on a filesystem this exotic.
+            try:
+                fallback_fd = os.open(
+                    str(path),
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_BINARY,
+                    0o600,
+                )
+            except FileExistsError:
+                pass
+            else:
+                try:
+                    write_all(fallback_fd, header_line)
+                finally:
+                    os.close(fallback_fd)
+    finally:
+        if fd != -1:
             os.close(fd)
-    else:
         try:
-            os.write(fd, (header_line + line).encode("utf-8"))
-        finally:
-            os.close(fd)
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+
+
+def append_row(path, fields):
+    """Append one TSV row through the ledger's single O_APPEND path.
+
+    Atomicity: opens with O_APPEND and writes the whole encoded line in one
+    write_all() call (ordinarily a single os.write() syscall, since every
+    row here is well under a page). A single write() to a regular file
+    opened O_APPEND is not interleaved with another process's writes to the
+    same file on Linux or macOS. On Windows, O_APPEND is emulated by the C
+    runtime rather than guaranteed atomic by the OS, so two sessions
+    appending at the exact same instant there do not carry the same
+    guarantee -- ensure_ledger_header()'s hard-link step still prevents two
+    processes from both creating the file, which is the race this exists
+    to close.
+
+    Torn-line guard: if a previous append was itself torn (a short write
+    left a row with no trailing newline, most likely from a full disk),
+    gluing the next row onto it would corrupt both. Before writing, this
+    checks whether the ledger's last byte is already a newline; if it is
+    not, it prepends one. Opening O_RDWR (rather than O_WRONLY) makes the
+    current end-of-file and its last byte readable through this same fd
+    without disturbing where the write lands -- O_APPEND reseeks to the
+    true end-of-file for every write() regardless of the fd's read
+    position, so a concurrent writer landing between this check and this
+    write costs at most one extra blank line, which dispatch-stats skips
+    silently rather than counting as malformed.
+    """
+    ensure_ledger_header(path)
+
+    line = ("\t".join(sanitize(f) for f in fields) + "\n").encode("utf-8")
+
+    fd = os.open(str(path), os.O_RDWR | os.O_APPEND | _O_BINARY)
+    try:
+        size = os.fstat(fd).st_size
+        if size > 0:
+            # os.pread would do this in one call but is POSIX-only; lseek
+            # then read is the portable equivalent, and it does not disturb
+            # where the write below lands (see the docstring above).
+            os.lseek(fd, size - 1, os.SEEK_SET)
+            last_byte = os.read(fd, 1)
+            if last_byte != b"\n":
+                line = b"\n" + line
+        write_all(fd, line)
+    finally:
+        os.close(fd)
 
 
 def main(argv=None):

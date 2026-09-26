@@ -1,7 +1,7 @@
 """Tests for bin/dispatch-stats.
 
-Every test points DISPATCH_LEDGER at a pytest tmp_path. Nothing here reads
-the real ~/.claude.
+Every test points DISPATCH_LEDGER (or, for one default-path test, HOME) at
+a pytest tmp_path. Nothing here reads the real ~/.claude.
 """
 import json
 import os
@@ -9,6 +9,8 @@ import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STATS_SCRIPT = REPO_ROOT / "bin" / "dispatch-stats"
@@ -48,12 +50,19 @@ def run_ledger(args, ledger_path):
     )
 
 
-def write_ledger(path, rows):
+def write_ledger(path, rows, encoding="utf-8"):
     """rows: list of lists of 13 raw string fields (ts already formatted)."""
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding=encoding) as f:
         f.write("\t".join(HEADER) + "\n")
         for row in rows:
             f.write("\t".join(row) + "\n")
+
+
+def assert_one_line_stderr(result):
+    assert result.returncode != 0
+    lines = result.stderr.splitlines()
+    assert len(lines) == 1, f"expected exactly one stderr line, got {len(lines)}: {result.stderr!r}"
+    return lines[0]
 
 
 def ts(days_ago=0):
@@ -74,6 +83,7 @@ def make_row(
     ]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX executable-bit semantics don't apply on Windows")
 def test_script_is_executable():
     assert os.access(STATS_SCRIPT, os.X_OK)
 
@@ -140,15 +150,105 @@ def test_malformed_row_too_many_columns_is_skipped(tmp_path):
     assert payload["skipped_rows"] == 1
 
 
-def test_day_window_boundary(tmp_path):
+def test_malformed_row_bad_loop_count_is_skipped_not_crashed(tmp_path):
+    """A row with exactly 13 columns and a valid timestamp, but garbage in
+    a loop-count field, must be skipped like any other bad row rather than
+    crashing compute_stats() several stages later on int('abc')."""
     ledger = tmp_path / "runs.tsv"
-    inside = make_row(task="in", timestamp=ts(days_ago=29))
-    outside = make_row(task="out", timestamp=ts(days_ago=31))
-    write_ledger(ledger, [inside, outside])
-    result = run_stats(["--days", "30", "--json"], ledger_path=ledger)
+    good = make_row(task="1")
+    bad = make_row(task="2", impl_loops="not-a-number")
+    negative = make_row(task="3", quality_loops="-1")
+    write_ledger(ledger, [good, bad, negative])
+    result = run_stats(["--json"], ledger_path=ledger)
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["total_runs"] == 1
+    assert payload["skipped_rows"] == 2
+
+
+def test_blank_line_is_not_malformed(tmp_path):
+    ledger = tmp_path / "runs.tsv"
+    with open(ledger, "w", newline="", encoding="utf-8") as f:
+        f.write("\t".join(HEADER) + "\n")
+        f.write("\n")  # a genuinely blank line
+        f.write("\t".join(make_row()) + "\n")
+    result = run_stats(["--json"], ledger_path=ledger)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["total_runs"] == 1
+    assert payload["skipped_rows"] == 0
+
+
+def test_header_mismatch_exits_one_with_one_line(tmp_path):
+    ledger = tmp_path / "runs.tsv"
+    ledger.write_text("wrong\theader\tshape\n", encoding="utf-8")
+    result = run_stats([], ledger_path=ledger)
+    line = assert_one_line_stderr(result)
+    assert result.returncode == 1
+    assert "header does not match" in line
+    assert str(ledger) in line
+
+
+def test_ledger_path_is_a_directory_exits_one_with_one_line(tmp_path):
+    ledger_dir = tmp_path / "runs.tsv"
+    ledger_dir.mkdir()
+    result = run_stats([], ledger_path=ledger_dir)
+    assert_one_line_stderr(result)
+    assert result.returncode == 1
+
+
+def test_bom_prefixed_ledger_still_parses(tmp_path):
+    ledger = tmp_path / "runs.tsv"
+    write_ledger(ledger, [make_row()], encoding="utf-8-sig")
+    result = run_stats(["--json"], ledger_path=ledger)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["total_runs"] == 1
+
+
+def test_negative_days_rejected_one_line(tmp_path):
+    ledger = tmp_path / "runs.tsv"
+    write_ledger(ledger, [make_row()])
+    result = run_stats(["--days", "-1"], ledger_path=ledger)
+    line = assert_one_line_stderr(result)
+    assert "--days" in line
+
+
+def test_zero_days_is_accepted(tmp_path):
+    ledger = tmp_path / "runs.tsv"
+    write_ledger(ledger, [make_row()])
+    result = run_stats(["--days", "0", "--json"], ledger_path=ledger)
+    assert result.returncode == 0, result.stderr
+    json.loads(result.stdout)  # must still be valid JSON, whatever the count
+
+
+def test_invalid_days_value_stderr_one_line(tmp_path):
+    ledger = tmp_path / "runs.tsv"
+    result = run_stats(["--days", "abc"], ledger_path=ledger)
+    line = assert_one_line_stderr(result)
+    assert "--days" in line
+
+
+def test_explicit_non_utc_offset_converted_correctly(tmp_path):
+    """A timestamp with an explicit (non-UTC, non-Z) offset must be
+    CONVERTED to UTC, not have its clock-face numbers relabeled as UTC.
+    Constructed so the two interpretations land on opposite sides of the
+    default 30-day cutoff: naively relabeling as UTC would wrongly count
+    this row as in-window; converting it correctly excludes it."""
+    ledger = tmp_path / "runs.tsv"
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=30)
+    wrong_utc_clockface = cutoff + timedelta(hours=2)
+    true_utc_instant = wrong_utc_clockface - timedelta(hours=10)
+    offset_tz = timezone(timedelta(hours=10))
+    local_clockface = true_utc_instant.astimezone(offset_tz)
+    ts_str = local_clockface.strftime("%Y-%m-%dT%H:%M:%S") + "+10:00"
+
+    write_ledger(ledger, [make_row(timestamp=ts_str)])
+    result = run_stats(["--json"], ledger_path=ledger)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["total_runs"] == 0  # correctly excluded once converted to UTC
 
 
 def test_oneline_output_format(tmp_path):
@@ -181,6 +281,27 @@ def test_json_output_matches_hand_computed_stats(tmp_path):
     assert by_model["sonnet"]["escalated"] == 1
     assert by_model["opus"]["runs"] == 1
     assert by_model["opus"]["escalated"] == 0
+
+
+def test_json_shape_identical_keys_with_and_without_rows(tmp_path):
+    """--json must return the same key set whether or not the window has
+    rows (zeros and empty lists rather than a shorter payload), with
+    "message" appearing only alongside them in the empty case."""
+    empty_ledger = tmp_path / "empty.tsv"
+    empty_ledger.touch()
+    full_ledger = tmp_path / "runs.tsv"
+    write_ledger(full_ledger, [make_row()])
+
+    empty_payload = json.loads(run_stats(["--json"], ledger_path=empty_ledger).stdout)
+    full_payload = json.loads(run_stats(["--json"], ledger_path=full_ledger).stdout)
+
+    assert set(empty_payload) - {"message"} == set(full_payload) - {"message"}
+    assert empty_payload["total_runs"] == 0
+    assert empty_payload["by_model"] == []
+    assert empty_payload["top_failing_plans"] == []
+    assert empty_payload["avg_impl_loops"] == 0.0
+    assert "message" in empty_payload
+    assert "message" not in full_payload
 
 
 def test_free_form_review_values_do_not_crash_and_are_not_miscounted(tmp_path):
@@ -270,11 +391,22 @@ def test_top_failing_plans_ranked_by_escalations(tmp_path):
     assert "plans/c.md" not in [p["plan_path"] for p in top]
 
 
+def test_day_window_boundary(tmp_path):
+    ledger = tmp_path / "runs.tsv"
+    inside = make_row(task="in", timestamp=ts(days_ago=29))
+    outside = make_row(task="out", timestamp=ts(days_ago=31))
+    write_ledger(ledger, [inside, outside])
+    result = run_stats(["--days", "30", "--json"], ledger_path=ledger)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["total_runs"] == 1
+
+
 def test_json_and_oneline_are_mutually_exclusive(tmp_path):
     ledger = tmp_path / "runs.tsv"
     write_ledger(ledger, [make_row()])
     result = run_stats(["--json", "--oneline"], ledger_path=ledger)
-    assert result.returncode != 0
+    assert_one_line_stderr(result)
 
 
 def test_skipped_rows_reported_on_stderr_not_stdout(tmp_path):

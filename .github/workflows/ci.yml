@@ -4,30 +4,40 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
       - name: Install pytest
-        run: pip install pytest
+        run: pip install pytest==9.1.1
 
+      # test -x is a POSIX-ism; there is no equivalent execute-permission
+      # bit to check on Windows, so this step is meaningless there rather
+      # than failing for a real reason.
       - name: Check scripts are executable
+        if: runner.os != 'Windows'
         run: |
           test -x bin/dispatch-ledger
           test -x bin/dispatch-stats
 
+      # python (not python3): actions/setup-python guarantees "python" on
+      # every OS in the matrix; Windows runners do not reliably provide a
+      # "python3" alias.
       - name: Byte-compile scripts
-        run: python3 -m py_compile bin/dispatch-ledger bin/dispatch-stats
+        run: python -m py_compile bin/dispatch-ledger bin/dispatch-stats
 
       - name: Run tests
         run: pytest -q
