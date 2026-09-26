@@ -161,15 +161,21 @@ def ensure_ledger_header(path):
     opening the file and finishing that write -- can land before the header
     write completes, or the header can end up on line 2. Splitting "create
     the file" from "write a row" into two separately-atomic steps closes
-    this: write the header to a temp file in the same directory (mode 0600,
-    so the fallback below matches), then os.link() it into place.
-    Hard-linking is atomic and fails with FileExistsError if the
-    destination already exists, so exactly one process's temp file ever
-    becomes the ledger, no matter how many processes race here. Every row
-    after that -- including the very first one, from whichever process won
-    -- goes through append_row()'s single O_APPEND path, so there is only
-    one way any row is ever written.
+    this: write the header to a temp file in the same directory, then
+    os.link() it into place. Hard-linking is atomic and fails with
+    FileExistsError if the destination already exists, so exactly one
+    process's temp file ever becomes the ledger, no matter how many
+    processes race here. Every row after that -- including the very first
+    one, from whichever process won -- goes through append_row()'s single
+    O_APPEND path, so there is only one way any row is ever written.
+
+    The common case skips all of this: once the ledger exists, there is
+    nothing left to do, and checking that first avoids creating a temp file
+    on every single append.
     """
+    if path.exists():
+        return
+
     path.parent.mkdir(parents=True, exist_ok=True)
     header_line = ("\t".join(HEADER) + "\n").encode("utf-8")
 
@@ -182,33 +188,29 @@ def ensure_ledger_header(path):
             os.link(tmp_name, str(path))
         except FileExistsError:
             pass  # another process's temp file won the race; the ledger exists
-        except OSError:
+        except OSError as exc:
             # No hard-link support on this filesystem (some network mounts).
-            # Narrower fallback: an exclusive create still guarantees at
-            # most one process's open() succeeds, but a second process here
-            # blocks behind the filesystem's own open() call instead of one
-            # atomic link(), so the guarantee against interleaving with a
-            # concurrent row-append is weaker on a filesystem this exotic.
-            try:
-                fallback_fd = os.open(
-                    str(path),
-                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_BINARY,
-                    0o600,
-                )
-            except FileExistsError:
-                pass
-            else:
-                try:
-                    write_all(fallback_fd, header_line)
-                finally:
-                    os.close(fallback_fd)
+            # There is no other primitive here that creates a file and
+            # populates it in one atomic step, so there is no safe fallback:
+            # an exclusive create followed by a SEPARATE, non-append header
+            # write reintroduces exactly the race this function exists to
+            # close (a second writer's row can land, via append_row()'s own
+            # O_APPEND open, in the gap between the create and the header
+            # write, and then be overwritten when the header write lands at
+            # offset 0). Failing loudly here is safer than a fallback that
+            # silently drops a row on a filesystem exotic enough to reach
+            # this branch at all.
+            raise OSError(
+                f"cannot create it safely on this filesystem (no hard links): {exc}; "
+                f"point DISPATCH_LEDGER at a local disk"
+            ) from exc
     finally:
         if fd != -1:
             os.close(fd)
         try:
             os.unlink(tmp_name)
-        except OSError:
-            pass
+        except OSError as exc:
+            print(f"dispatch-ledger: warning: could not remove temp file {tmp_name}: {exc}", file=sys.stderr)
 
 
 def append_row(path, fields):

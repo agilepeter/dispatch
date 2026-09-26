@@ -398,24 +398,127 @@ def test_concurrent_appends_produce_one_header_and_n_clean_rows(tmp_path):
 
 
 def test_first_write_race_header_stays_on_line_one(tmp_path):
-    """Deterministic simulation of the exact interleaving that used to let
-    a header-plus-row write at offset 0 clobber a row appended in the gap:
-    call the internal functions directly in the racy order (create, then a
-    second "racer" also finds the file already there, THEN both rows get
-    appended) rather than relying on OS thread-scheduling timing."""
+    """Forces the actual race rather than simulating it with two sequential
+    calls: patches os.link so the FIRST writer blocks, via a
+    threading.Event, right after it has written its temp header but
+    before it links that file into place. While it is blocked, a second
+    append_row runs to completion on the main thread against the same
+    path. Releasing the first writer then lets its os.link() discover the
+    ledger already exists (FileExistsError) and fall through to appending
+    its own row after the second writer's. This is the exact interleaving
+    the mkstemp-plus-link design has to survive, and the one a purely
+    sequential test (create, create-again, append, append) cannot exercise
+    -- it would pass against the old create-and-write-together code just
+    as easily as this one, which is why this version drives it with a
+    real second thread instead.
+    """
     mod = load_ledger_module()
     ledger = tmp_path / "runs.tsv"
 
-    mod.ensure_ledger_header(ledger)  # "process A" creates the header
-    mod.ensure_ledger_header(ledger)  # "process B" finds it already there
-    mod.append_row(ledger, ["ts-a", "plan-a", "1", "text-a", "DONE", "1", "PASS", "1", "PASS", "0", "complete", "sonnet", "-"])
-    mod.append_row(ledger, ["ts-b", "plan-b", "2", "text-b", "DONE", "1", "PASS", "1", "PASS", "0", "complete", "sonnet", "-"])
+    real_link = mod.os.link
+    first_writer_paused = threading.Event()
+    release_first_writer = threading.Event()
+    link_call_count = [0]
+
+    def blocking_link(src, dst):
+        link_call_count[0] += 1
+        if link_call_count[0] == 1:
+            first_writer_paused.set()
+            assert release_first_writer.wait(timeout=5), "test deadlocked waiting to be released"
+        return real_link(src, dst)
+
+    mod.os.link = blocking_link
+    try:
+        row_a = ["ts-a", "plan-a", "1", "text-a", "DONE", "1", "PASS", "1", "PASS", "0", "complete", "sonnet", "-"]
+        row_b = ["ts-b", "plan-b", "2", "text-b", "DONE", "1", "PASS", "1", "PASS", "0", "complete", "sonnet", "-"]
+        results = {}
+
+        def first_writer():
+            mod.append_row(ledger, row_a)
+            results["a"] = "done"
+
+        thread_a = threading.Thread(target=first_writer)
+        thread_a.start()
+        try:
+            assert first_writer_paused.wait(timeout=5), "first writer never reached its os.link call"
+
+            # Second writer, on the main thread, runs to completion while
+            # the first is blocked mid-creation.
+            mod.append_row(ledger, row_b)
+            results["b"] = "done"
+        finally:
+            release_first_writer.set()
+            thread_a.join(timeout=5)
+        assert not thread_a.is_alive(), "first writer's thread did not finish"
+        assert results == {"a": "done", "b": "done"}
+    finally:
+        mod.os.link = real_link
 
     lines = ledger.read_text(encoding="utf-8").splitlines()
-    assert lines[0] == "\t".join(mod.HEADER)
-    assert len(lines) == 3
-    assert lines[1].startswith("ts-a\t")
-    assert lines[2].startswith("ts-b\t")
+    header = "\t".join(mod.HEADER)
+    assert lines.count(header) == 1
+    assert lines[0] == header
+    data_lines = [line for line in lines if line != header]
+    assert len(data_lines) == 2
+    assert any(line.startswith("ts-a\t") for line in data_lines)
+    assert any(line.startswith("ts-b\t") for line in data_lines)
+
+
+def test_append_to_existing_ledger_creates_no_temp_file(tmp_path):
+    """ensure_ledger_header()'s fast path (the ledger already exists) must
+    skip the temp-file-and-link dance entirely, not just skip the link
+    itself -- listing the directory before and after an append to an
+    already-created ledger must show no new file of any kind."""
+    mod = load_ledger_module()
+    ledger = tmp_path / "runs.tsv"
+    mod.ensure_ledger_header(ledger)
+
+    before = set(os.listdir(tmp_path))
+    mod.append_row(ledger, ["ts-a", "plan-a", "1", "text-a", "DONE", "1", "PASS", "1", "PASS", "0", "complete", "sonnet", "-"])
+    after = set(os.listdir(tmp_path))
+
+    assert after - before == set(), f"unexpected new file(s) in the ledger directory: {after - before}"
+
+
+def test_ensure_ledger_header_fails_loudly_when_hard_links_unsupported(tmp_path, monkeypatch, capsys):
+    """When os.link fails for a reason OTHER than the destination already
+    existing (no hard-link support on this filesystem), the only safe move
+    is to fail: any fallback that creates the file and then writes the
+    header as a second, separate step reintroduces the very race this
+    module exists to close (a concurrent row can land in the empty file
+    between the create and the header write, then be overwritten when the
+    header lands at offset 0). This must surface as the same one-line
+    stderr contract as any other write failure, and must leave no
+    half-created ledger behind. Tested in-process (like the race test
+    above) so os.link itself can be monkeypatched; main() reads its ledger
+    path from the environment, same as a real invocation would.
+    """
+    mod = load_ledger_module()
+    ledger = tmp_path / "runs.tsv"
+
+    def fake_link(src, dst):
+        raise OSError(1, "Operation not permitted (simulated: no hard link support)")
+
+    monkeypatch.setattr(mod.os, "link", fake_link)
+    monkeypatch.setenv("DISPATCH_LEDGER", str(ledger))
+
+    argv = [
+        "append", "--plan", "plans/a.md", "--task", "1", "--text", "hi",
+        "--impl-status", "DONE", "--impl-loops", "1",
+        "--spec-review", "PASS", "--spec-loops", "1",
+        "--quality-review", "PASS", "--quality-loops", "0",
+        "--final-status", "complete", "--model", "sonnet",
+    ]
+    exit_code = mod.main(argv)
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    lines = captured.err.splitlines()
+    assert len(lines) == 1, f"expected exactly one stderr line, got: {captured.err!r}"
+    assert "cannot create it safely" in lines[0]
+    assert "no hard links" in lines[0]
+    assert not ledger.exists()
+    assert not any(p.name.startswith(".dispatch-ledger-tmp-") for p in tmp_path.iterdir())
 
 
 def test_torn_last_line_does_not_corrupt_next_append(tmp_path):
