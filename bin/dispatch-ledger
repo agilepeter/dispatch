@@ -32,6 +32,13 @@ FINAL_STATUS_CHOICES = ["complete", "escalated", "user"]
 
 _O_BINARY = getattr(os, "O_BINARY", 0)  # 0 on POSIX; see append_row().
 
+# msvcrt only exists on Windows; importing it unconditionally would crash
+# this script on every other OS before main() ever ran. Gating the import
+# on the platform check keeps this the only place the module touches it --
+# see append_row() for what it locks and why POSIX needs no equivalent.
+if sys.platform == "win32":
+    import msvcrt
+
 
 class OneLineArgumentParser(argparse.ArgumentParser):
     """Bad input must fail loud but short: one line on stderr, no multi-line
@@ -213,19 +220,43 @@ def ensure_ledger_header(path):
             print(f"dispatch-ledger: warning: could not remove temp file {tmp_name}: {exc}", file=sys.stderr)
 
 
+def _write_row_with_torn_line_guard(fd, line):
+    """Read the ledger's last byte and, if it is not a newline, prepend one
+    to `line` before writing it -- the torn-line guard described in
+    append_row()'s docstring. Shared by both platform branches there so the
+    guard itself behaves identically everywhere; only what surrounds it (an
+    explicit lock on Windows, nothing extra on POSIX) differs.
+    """
+    size = os.fstat(fd).st_size
+    if size > 0:
+        # os.pread would do this in one call but is POSIX-only; lseek
+        # then read is the portable equivalent, and it does not disturb
+        # where the write below lands (see append_row()'s docstring).
+        os.lseek(fd, size - 1, os.SEEK_SET)
+        last_byte = os.read(fd, 1)
+        if last_byte != b"\n":
+            line = b"\n" + line
+    write_all(fd, line)
+
+
 def append_row(path, fields):
     """Append one TSV row through the ledger's single O_APPEND path.
 
     Atomicity: opens with O_APPEND and writes the whole encoded line in one
     write_all() call (ordinarily a single os.write() syscall, since every
-    row here is well under a page). A single write() to a regular file
-    opened O_APPEND is not interleaved with another process's writes to the
-    same file on Linux or macOS. On Windows, O_APPEND is emulated by the C
-    runtime rather than guaranteed atomic by the OS, so two sessions
-    appending at the exact same instant there do not carry the same
-    guarantee -- ensure_ledger_header()'s hard-link step still prevents two
-    processes from both creating the file, which is the race this exists
-    to close.
+    row here is well under a page). Appending a row is atomic against
+    another dispatch-ledger process on every OS in the support matrix, by
+    two different means. On Linux and macOS, the kernel itself guarantees
+    that a single write() to an O_APPEND-opened file lands at the true end
+    of file and is never interleaved with another process's write to the
+    same file, so nothing further is needed there. On Windows, O_APPEND is
+    only emulated by the C runtime as seek-to-end-then-write, which is not
+    atomic on its own, so this instead holds an explicit byte-range lock
+    (msvcrt.locking, stdlib) around the whole read-the-last-byte-then-
+    seek-then-write sequence below, so two dispatch-ledger processes
+    appending at the same instant there serialize instead of interleaving.
+    ensure_ledger_header()'s hard-link step separately prevents two
+    processes from both creating the file, on every OS.
 
     Torn-line guard: if a previous append was itself torn (a short write
     left a row with no trailing newline, most likely from a full disk),
@@ -233,11 +264,13 @@ def append_row(path, fields):
     checks whether the ledger's last byte is already a newline; if it is
     not, it prepends one. Opening O_RDWR (rather than O_WRONLY) makes the
     current end-of-file and its last byte readable through this same fd
-    without disturbing where the write lands -- O_APPEND reseeks to the
-    true end-of-file for every write() regardless of the fd's read
-    position, so a concurrent writer landing between this check and this
-    write costs at most one extra blank line, which dispatch-stats skips
-    silently rather than counting as malformed.
+    without disturbing where the write lands. On Windows this guard read
+    runs under the same lock as the write that follows it, so it cannot go
+    stale against another process's append landing in between. On POSIX,
+    O_APPEND reseeks to the true end-of-file for every write() regardless
+    of the fd's read position, so a concurrent writer landing between this
+    check and this write costs at most one extra blank line, which
+    dispatch-stats skips silently rather than counting as malformed.
     """
     ensure_ledger_header(path)
 
@@ -245,16 +278,32 @@ def append_row(path, fields):
 
     fd = os.open(str(path), os.O_RDWR | os.O_APPEND | _O_BINARY)
     try:
-        size = os.fstat(fd).st_size
-        if size > 0:
-            # os.pread would do this in one call but is POSIX-only; lseek
-            # then read is the portable equivalent, and it does not disturb
-            # where the write below lands (see the docstring above).
-            os.lseek(fd, size - 1, os.SEEK_SET)
-            last_byte = os.read(fd, 1)
-            if last_byte != b"\n":
-                line = b"\n" + line
-        write_all(fd, line)
+        if sys.platform == "win32":
+            # msvcrt.locking's region is relative to the CURRENT file
+            # position, not an absolute offset, so this seeks to 0 before
+            # both the lock and, in the finally below, the unlock. One
+            # byte at offset 0 is always a valid region to lock, even on a
+            # brand-new empty ledger: the docs say a locked region "may
+            # continue beyond the end of the file". LK_LOCK retries once a
+            # second and raises OSError after ten attempts, and that
+            # OSError is left to propagate out of this function to main()'s
+            # existing one-line exit-1 handler unchanged -- loud, not
+            # silent, and correct, since contention here only ever means
+            # another append is genuinely mid-flight against a ledger that
+            # normally gets one row per task.
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+            try:
+                os.lseek(fd, 0, os.SEEK_END)
+                _write_row_with_torn_line_guard(fd, line)
+            finally:
+                # Unlocking must name the same region as the lock call
+                # above -- same offset, same length -- so this seeks back
+                # to 0 first.
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        else:
+            _write_row_with_torn_line_guard(fd, line)
     finally:
         os.close(fd)
 

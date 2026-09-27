@@ -368,19 +368,10 @@ def test_default_ledger_path_under_home_when_env_unset(tmp_path):
     assert expected.exists()
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="On Windows, O_APPEND is emulated by the C runtime rather than "
-           "guaranteed atomic by the OS, and a writer's view of the file's "
-           "last byte can go stale against another process's append that "
-           "just landed. Two writers that both read a stale non-newline "
-           "last byte each prepend a newline to close a torn line, and the "
-           "second one leaves a blank line (which dispatch-stats skips), so "
-           "this 20-process stress test is not a meaningful check there. "
-           "POSIX filesystems serialise a write against the reads around it, "
-           "so the guard cannot misfire there. The header's own creation "
-           "race is covered on every OS by the two tests that force it.",
-)
+# On Windows, append_row() holds a byte-range lock for the whole of each
+# append, so the 20 workers below serialize on it there just as they rely
+# on O_APPEND's own guarantee on POSIX -- this test means the same thing
+# on all three OSes.
 def test_concurrent_appends_produce_one_header_and_n_clean_rows(tmp_path):
     ledger = tmp_path / "runs.tsv"
     n = 20
@@ -408,6 +399,62 @@ def test_concurrent_appends_produce_one_header_and_n_clean_rows(tmp_path):
         assert len(row) == 13
     seen_tasks = sorted(int(r[2]) for r in data_rows)
     assert seen_tasks == list(range(n))
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="msvcrt.locking is Windows-only; there is no equivalent byte-range lock to hold here on POSIX",
+)
+def test_windows_lock_blocks_concurrent_append_until_released(tmp_path):
+    """Proves append_row() really takes the byte-range lock it claims to,
+    rather than just happening to produce clean output by luck: while this
+    test holds the same one-byte region locked (through msvcrt.locking's
+    non-blocking mode, so acquiring it here cannot itself block), a
+    concurrent append must not finish until the lock is released.
+    """
+    import msvcrt
+
+    mod = load_ledger_module()
+    ledger = tmp_path / "runs.tsv"
+    mod.ensure_ledger_header(ledger)
+
+    lock_fd = os.open(str(ledger), os.O_RDWR | os.O_BINARY)
+    os.lseek(lock_fd, 0, os.SEEK_SET)
+    msvcrt.locking(lock_fd, msvcrt.LK_NBLCK, 1)
+    results = {}
+    try:
+        def append_in_background():
+            results["append"] = run_ledger(BASE_APPEND_ARGS, ledger_path=ledger)
+
+        worker = threading.Thread(target=append_in_background)
+        worker.start()
+        worker.join(timeout=2.5)
+        assert worker.is_alive(), "the append finished while the lock was held, so it never actually waited on it"
+    finally:
+        os.lseek(lock_fd, 0, os.SEEK_SET)
+        msvcrt.locking(lock_fd, msvcrt.LK_UNLCK, 1)
+        os.close(lock_fd)
+
+    worker.join(timeout=10)
+    assert not worker.is_alive(), "the append never finished after the lock was released"
+    result = results["append"]
+    assert result.returncode == 0, result.stderr
+    rows = read_rows(ledger)
+    assert len(rows) == 2  # header + the one row the background append wrote
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="this checks that msvcrt stays absent, which is only a meaningful check off Windows",
+)
+def test_msvcrt_not_imported_on_posix(tmp_path):
+    """append_row()'s platform split has to be a real branch and not a
+    mode value the POSIX path quietly ignores: loading the module and
+    running a normal append here must never pull msvcrt into sys.modules."""
+    mod = load_ledger_module()
+    ledger = tmp_path / "runs.tsv"
+    mod.append_row(ledger, ["ts-a", "plan-a", "1", "text-a", "DONE", "1", "PASS", "1", "PASS", "0", "complete", "sonnet", "-"])
+    assert "msvcrt" not in sys.modules
 
 
 def test_first_write_race_header_stays_on_line_one(tmp_path):

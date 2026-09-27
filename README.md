@@ -115,9 +115,13 @@ Every task run appends one TSV row:
 Location: `$DISPATCH_LEDGER` if set, otherwise `~/.claude/dispatch/runs.tsv`.
 The file and its header are created on first use, safely under concurrent
 first writers on every OS. Appending a row is atomic against another
-dispatch-ledger process on Linux and macOS. On Windows, two sessions
-appending at the same instant can overwrite or split a row; everywhere else,
-each append is atomic.
+dispatch-ledger process on every OS, by different means depending on the
+platform: on Linux and macOS the kernel guarantees that a single write to
+an `O_APPEND`-opened file lands at the true end of file and is never
+interleaved with another process's write; on Windows, where `O_APPEND` is
+only emulated by the C runtime, a byte-range lock held for the whole of
+each append serializes it against every other dispatch-ledger process
+instead.
 
 Append a row directly:
 
