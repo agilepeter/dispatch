@@ -368,10 +368,8 @@ def test_default_ledger_path_under_home_when_env_unset(tmp_path):
     assert expected.exists()
 
 
-# On Windows, append_row() holds a byte-range lock for the whole of each
-# append, so the 20 workers below serialize on it there just as they rely
-# on O_APPEND's own guarantee on POSIX -- this test means the same thing
-# on all three OSes.
+# Windows serializes these 20 workers on append_row()'s byte-range lock, POSIX
+# on O_APPEND's own guarantee, so this test means the same thing on all three OSes.
 def test_concurrent_appends_produce_one_header_and_n_clean_rows(tmp_path):
     ledger = tmp_path / "runs.tsv"
     n = 20

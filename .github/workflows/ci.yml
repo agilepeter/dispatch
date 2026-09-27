@@ -40,7 +40,9 @@ jobs:
         run: python -m py_compile bin/dispatch-ledger bin/dispatch-stats
 
       - name: Run tests
-        run: pytest -q
+        # -rs names every skipped test and its reason, so a green leg says exactly
+        # which tests ran there without anyone decoding progress dots.
+        run: pytest -q -rs
 
       # Runs on one leg only: what this validates (the manifest and every skill's
       # frontmatter) does not differ by OS, so three installs of the CLI would only
