@@ -45,12 +45,14 @@ jobs:
         # which tests ran there without anyone decoding progress dots.
         run: pytest -q -rs
 
-      # Runs on one leg only: what this validates (the manifest and every skill's
-      # frontmatter) does not differ by OS, so three installs of the CLI would only
-      # triple the network cost without checking anything new. pytest's own frontmatter
-      # test parses the same YAML and catches the same syntax errors, but this step runs
-      # the actual tool Claude Code loads a plugin with, not a stand-in for it, so it also
-      # catches whatever else that tool checks beyond plain YAML validity.
+      # Runs on one leg only: what this validates does not differ by OS, so three
+      # installs of the CLI would only triple the network cost without checking anything
+      # new. It checks what the tool itself checks: the schema of both manifests, and that
+      # every skill has frontmatter and a description. It does not check that the
+      # frontmatter is valid YAML. The version pinned below accepts a value with an
+      # unquoted colon in it, while Claude Code 2.1.210 rejects the same file and loads
+      # the skill with all of its metadata dropped. pytest's strict parse is what protects
+      # someone on an older version, so neither check replaces the other.
       - name: Install Claude Code CLI
         if: matrix.os == 'ubuntu-latest'
         # Pinned like everything else here, so a validator change upstream arrives as a

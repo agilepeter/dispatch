@@ -28,6 +28,13 @@ claude plugin install dispatch@agilepeter
 Works out of the box on macOS and Linux. On Windows, use WSL or Git Bash with
 `python3` on PATH -- both ledger scripts are plain Python 3 files.
 
+To install from a local checkout instead, add the directory itself:
+`claude plugin marketplace add /path/to/dispatch`, then install as above.
+
+Installed, the plugin adds about 290 tokens to every session and about 4,600 each
+time the `dispatch` skill fires. Both are estimates; `claude plugin details dispatch`
+prints the current ones.
+
 ## What it does
 
 1. Read an approved plan's tasks (a program design pass first, for multi-file
@@ -241,4 +248,22 @@ Both scripts are stdlib-only Python 3 and need nothing installed.
 
 ## Releases
 
-`scripts/release-check.sh` is the pre-release checklist. It verifies version agreement among `.claude-plugin/plugin.json`, `CHANGELOG.md`, and `.claude-plugin/marketplace.json`, runs `claude plugin validate --strict` and `claude plugin tag --dry-run`, and checks that the tag does not already exist locally or on origin (set `RELEASE_CHECK_OFFLINE=1` to skip the origin check). The script only checks; it does not create or push tags. After checks pass, create the release tag with `claude plugin tag` (form `dispatch--v<version>`). Users update with `claude plugin update dispatch`. The [CHANGELOG](CHANGELOG.md) is the record.
+`scripts/release-check.sh` is the pre-release checklist. It verifies that the
+version agrees among `.claude-plugin/plugin.json`, `CHANGELOG.md` and
+`.claude-plugin/marketplace.json`, runs `claude plugin validate --strict` on
+both manifests and `claude plugin tag --dry-run`, and checks that the tag does
+not already exist locally or on origin (set `RELEASE_CHECK_OFFLINE=1` to skip
+the origin check). The script only checks; it does not create or push tags.
+After it passes, create the release tag with `claude plugin tag` (form
+`dispatch--v<version>`). The [CHANGELOG](CHANGELOG.md) is the record, and
+[RELEASING.md](RELEASING.md) is the full runbook.
+
+A release is a version number: Claude Code gives an installed user a new copy
+only when `version` in `.claude-plugin/plugin.json` changes. To update, run
+`claude plugin update dispatch@agilepeter`; automatic updates are off until you
+turn them on under Marketplaces in `/plugin`. To stay on one version, add the
+marketplace at a tag: `agilepeter/dispatch#dispatch--v0.1.0`.
+
+One limit: claude.ai's organization sync rejects a plugin with a top-level
+`bin/` directory, which this plugin has. Installing through a marketplace, as
+above, is unaffected.

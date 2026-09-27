@@ -82,12 +82,17 @@ fi
 if ! command -v "$CLAUDE_BIN" >/dev/null 2>&1; then
   fail "$CLAUDE_BIN not found on PATH (set CLAUDE_BIN)"
 else
-  if out="$("$CLAUDE_BIN" plugin validate --strict . 2>&1)"; then
-    :
-  else
-    status=$?
-    fail "claude plugin validate --strict failed (exit $status): $(first_line "$out")"
-  fi
+  # Two targets, because they check different things: the repository root is
+  # validated as a marketplace manifest and nothing under it is read, while the
+  # plugin's own manifest brings its skills and their frontmatter with it.
+  for target in .claude-plugin/plugin.json .; do
+    if out="$("$CLAUDE_BIN" plugin validate --strict "$target" 2>&1)"; then
+      :
+    else
+      status=$?
+      fail "claude plugin validate --strict $target failed (exit $status): $(first_line "$out")"
+    fi
+  done
 
   if out="$("$CLAUDE_BIN" plugin tag --dry-run . 2>&1)"; then
     if [ -n "$out" ]; then printf '%s\n' "$out"; fi

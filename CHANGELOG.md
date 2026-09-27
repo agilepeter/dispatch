@@ -22,8 +22,12 @@
 
 - .claude-plugin/marketplace.json: Plugin marketplace entry.
 
-- scripts/release-check.sh: Pre-release checklist. Checks version agreement among `.claude-plugin/plugin.json`, the latest `CHANGELOG.md` heading, and `.claude-plugin/marketplace.json`; runs `claude plugin validate --strict` and a `claude plugin tag --dry-run`; and checks that the release tag (`<name>--v<version>`) does not already exist locally or on origin (`RELEASE_CHECK_OFFLINE=1` skips the origin check). Every check runs even after an earlier one fails, so one run reports everything that blocks the release. It only checks: it never creates or pushes a tag itself.
+- scripts/release-check.sh: Pre-release checklist. Checks version agreement among `.claude-plugin/plugin.json`, the latest `CHANGELOG.md` heading, and `.claude-plugin/marketplace.json`; runs `claude plugin validate --strict` on the plugin manifest and on the marketplace manifest, and a `claude plugin tag --dry-run`; and checks that the release tag (`<name>--v<version>`) does not already exist locally or on origin (`RELEASE_CHECK_OFFLINE=1` skips the origin check). Every check runs even after an earlier one fails, so one run reports everything that blocks the release. It only checks: it never creates or pushes a tag itself.
 
 - Test suite: tests/test_ledger.py (tests for dispatch-ledger), tests/test_skill_references.py (validation of skill files, frontmatter, and references), tests/test_stats.py (tests for dispatch-stats), tests/test_release_check.py (tests for scripts/release-check.sh).
+
+- evals/: A `claude plugin eval` suite of five cases, each against its own scaffolded fixture repo, run both with the plugin loaded and against a no-plugin baseline: design-doc-before-implementer (a design pass and one approval gate a plan before any implementer runs), spec-before-quality (spec review always precedes quality review), one-ledger-row-per-task (a task run logs exactly one well-formed ledger row), dirty-tree-blocks (an unrelated dirty tree stops the run cold, with no self-service git surgery), and reviewer-reads-code (spec review reads the code instead of trusting a claimed report). Release numbers live in evals/reports/0.1.0/.
+
+- RELEASING.md: the release runbook, including the order of the first release and what users run to update or pin a version.
 
 - CI: .github/workflows/ci.yml with matrix across Ubuntu, macOS, and Windows; Python 3.11; pytest suite on all three operating systems; plugin manifest validation on Ubuntu.

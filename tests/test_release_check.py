@@ -50,9 +50,30 @@ def _stub_claude(tmp_path) -> Path:
     return stub
 
 
-def _run(repo, tmp_path):
+def _stub_claude_rejecting(tmp_path, target) -> Path:
+    """A claude stand-in that succeeds at everything except validating one target."""
+    stub = tmp_path / "claude-stub-rejecting"
+    stub.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = plugin ] && [ "$2" = validate ]; then\n'
+        '  for arg in "$@"; do\n'
+        f'    if [ "$arg" = "{target}" ]; then\n'
+        '      echo "skill frontmatter is not valid YAML"\n'
+        "      exit 1\n"
+        "    fi\n"
+        "  done\n"
+        "fi\n"
+        "exit 0\n"
+    )
+    stub.chmod(0o755)
+    return stub
+
+
+def _run(repo, tmp_path, claude=None):
     env = dict(
-        os.environ, CLAUDE_BIN=str(_stub_claude(tmp_path)), RELEASE_CHECK_OFFLINE="1"
+        os.environ,
+        CLAUDE_BIN=str(claude or _stub_claude(tmp_path)),
+        RELEASE_CHECK_OFFLINE="1",
     )
     return subprocess.run(
         ["bash", str(repo / "scripts" / "release-check.sh")],
@@ -166,3 +187,16 @@ def test_copy_inside_another_repo_is_not_a_repo(tmp_path):
     result = _run(repo, tmp_path)
 
     _assert_single_failure(result, "not a git repository")
+
+
+@needs_git
+@pytest.mark.parametrize("target", [".claude-plugin/plugin.json", "."])
+def test_each_manifest_is_validated_and_a_failure_names_it(tmp_path, target):
+    # Validating the repository root checks the marketplace manifest and stops there. The
+    # plugin's own manifest, and the skills under it, are only checked when it is named.
+    repo = _copy_repo(tmp_path, git_init=True)
+
+    result = _run(repo, tmp_path, claude=_stub_claude_rejecting(tmp_path, target))
+
+    _assert_single_failure(result, f"validate --strict {target} ", "not valid YAML")
+    assert result.stdout == ""
