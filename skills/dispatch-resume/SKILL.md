@@ -1,7 +1,7 @@
 ---
 name: dispatch-resume
 description: Resume an in-progress dispatch run without retyping the plan's path -- finds it from this repo's saved plans and the ledger, then continues from the first task with no complete row.
-when_to_use: Use when the user wants to continue a dispatch run without naming the plan again. Example requests: "resume the dispatch run", "continue where dispatch left off".
+when_to_use: 'Use when the user wants to continue a dispatch run without naming the plan again. Example requests: "resume the dispatch run", "continue where dispatch left off".'
 argument-hint: "[plan-path]"
 ---
 

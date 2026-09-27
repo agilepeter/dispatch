@@ -131,7 +131,7 @@ def build_parser():
     append.add_argument("--final-status", required=True, choices=FINAL_STATUS_CHOICES)
     append.add_argument(
         "--model", required=True, type=non_empty,
-        help="Model tier(s) used, e.g. sonnet, opus, sonnet+haiku.",
+        help="Model tier(s) used, e.g. sonnet, opus, haiku+sonnet.",
     )
     append.add_argument("--notes", default="", help="Free text. Defaults to '-' when omitted or empty.")
 

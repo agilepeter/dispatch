@@ -8,9 +8,18 @@ SKILL.md's frontmatter has to parse and carry the fields Claude Code requires, n
 skills, templates, the README, or the plugin manifests may carry a local path, an internal
 project name, a commit trailer, or a pinned model id out into the world, and the coordinator's
 own instructions never tell it to push.
+
+This module parses frontmatter with PyYAML instead of a hand-rolled splitter, because only a
+real YAML parser reads it the same way Claude Code's own loader does: a value that merely
+contains a colon looks identical to genuinely broken YAML to anything less. That is a
+dependency this test suite alone takes on -- the plugin's shipped scripts, bin/dispatch-ledger
+and bin/dispatch-stats, stay stdlib-only so any machine with a bare python3 can run them, and
+nothing under skills/ needs a YAML library at runtime either.
 """
 import re
 from pathlib import Path
+
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = REPO_ROOT / "skills"
@@ -31,6 +40,14 @@ LEAK_CHECK_FILES = (
     + [REPO_ROOT / "README.md"]
     + sorted((REPO_ROOT / ".claude-plugin").glob("*.json"))
 )
+
+# README.md links to the plugin's own product page for the "why a verifier" numbers this repo
+# cannot keep current on its own. That is one deliberate, human-facing reference to the maker's
+# own domain -- not the kind of accidental workspace leak the "staas" pattern below exists to
+# catch -- so it is stripped out of the README's text before that check runs, and only from the
+# README: a skill or template's own operational instructions must stay generic and never carry
+# this or any other product link, so none of them get this allowance.
+README_ALLOWED_REFERENCES = ["https://staas.fund/dispatch/"]
 
 PLUGIN_ROOT_REF = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}(/[^\s`\"'()\[\]]+)")
 SKILL_DIR_REF = re.compile(r"\$\{CLAUDE_SKILL_DIR\}(/[^\s`\"'()\[\]]+)")
@@ -54,22 +71,21 @@ def read(path):
 
 
 def parse_frontmatter(text):
-    """Minimal, stdlib-only reader for the flat `key: value` frontmatter this project's
-    SKILL.md files use. Not a general YAML parser: it only has to confirm the two fields
-    Claude Code requires are present, not validate every field this repo's skills happen
-    to use.
+    """Parse a SKILL.md's frontmatter block with a real YAML parser.
+
+    A hand-rolled `key: value` splitter cannot tell a value that merely contains a colon from
+    one that is genuinely broken YAML -- it would read
+    `when_to_use: ... Example requests: "..."` as a fine key with a long string value, exactly
+    where Claude Code's own loader reads that second colon as the start of a nested mapping and
+    fails to parse the frontmatter at all (the skill then loads with no name, no description,
+    nothing). Using the same kind of parser Claude Code uses is what catches that class of bug.
     """
     assert text.startswith("---\n"), "SKILL.md must open with a --- frontmatter block"
     end = text.index("\n---", 4)
     block = text[4:end]
-    fields = {}
-    for line in block.splitlines():
-        if not line.strip() or line[0] in " \t":
-            continue  # blank line, or a continuation/nested line under the previous key
-        key, sep, value = line.partition(":")
-        if sep:
-            fields[key.strip()] = value.strip()
-    return fields
+    parsed = yaml.safe_load(block)
+    assert isinstance(parsed, dict), f"frontmatter did not parse to a mapping: {parsed!r}"
+    return parsed
 
 
 def test_at_least_the_three_expected_skills_exist():
@@ -132,6 +148,9 @@ def test_skill_name_matches_its_directory():
 def test_no_owner_specific_or_disallowed_strings():
     for path in LEAK_CHECK_FILES:
         text = read(path)
+        if path.name == "README.md":
+            for allowed in README_ALLOWED_REFERENCES:
+                text = text.replace(allowed, "")
         for label, pattern in LEAK_PATTERNS.items():
             assert not pattern.search(text), f"{path}: contains {label}"
 

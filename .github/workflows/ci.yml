@@ -22,7 +22,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install pytest
-        run: pip install pytest==9.1.1
+        run: pip install pytest==9.1.1 pyyaml==6.0.3
 
       # test -x is a POSIX-ism; there is no equivalent execute-permission
       # bit to check on Windows, so this step is meaningless there rather
@@ -41,3 +41,19 @@ jobs:
 
       - name: Run tests
         run: pytest -q
+
+      # Runs on one leg only: what this validates (the manifest and every skill's
+      # frontmatter) does not differ by OS, so three installs of the CLI would only
+      # triple the network cost without checking anything new. pytest's own frontmatter
+      # test parses the same YAML and catches the same syntax errors, but this step runs
+      # the actual tool Claude Code loads a plugin with, not a stand-in for it, so it also
+      # catches whatever else that tool checks beyond plain YAML validity.
+      - name: Install Claude Code CLI
+        if: matrix.os == 'ubuntu-latest'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Validate the plugin manifest and marketplace entry
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          claude plugin validate --strict .claude-plugin/plugin.json
+          claude plugin validate --strict .

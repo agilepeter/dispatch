@@ -89,8 +89,8 @@ exit-code gate that runs real commands instead of trusting a claim. As of
 own, one real dataset run this way stood at 121 tasks across 13 plans: 120
 completed, 1 escalated to a human, and a fresh reviewer found something to
 fix in 51 of them (42%) after the implementer had already reported done.
-The maker's own product page carries this dataset's current numbers,
-refreshed on every publish.
+The [maker's own product page](https://staas.fund/dispatch/) carries this
+dataset's current numbers, refreshed on every publish.
 
 ## The ledger
 
@@ -109,7 +109,7 @@ Every task run appends one TSV row:
 | `quality_review` | `PASS` / `CRITICAL` / `IMPORTANT` / `SKIPPED`, or a free-form outcome |
 | `quality_loops` | number of quality-review fix-and-recheck cycles |
 | `final_status` | `complete` / `escalated` / `user` |
-| `model_impl` | model tier(s) the implementer ran on, e.g. `sonnet`, `opus`, `sonnet+haiku` |
+| `model_impl` | model tier(s) the implementer ran on, e.g. `sonnet`, `opus`, `haiku+sonnet` |
 | `notes` | free text, `-` if empty |
 
 Location: `$DISPATCH_LEDGER` if set, otherwise `~/.claude/dispatch/runs.tsv`.

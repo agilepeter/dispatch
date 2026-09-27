@@ -1,7 +1,7 @@
 ---
 name: dispatch
 description: Build an approved plan of three or more checkbox tasks, one task at a time, with a fresh implementer, a spec reviewer, a quality reviewer, an exit-code gate and a ledger row per task.
-when_to_use: Use when the user approves a multi-task plan and wants it built, or wants to continue a plan already in progress. Example requests: "build my approved plan", "continue the plan at plans/foo.md", "run this plan task by task".
+when_to_use: 'Use when the user approves a multi-task plan and wants it built, or wants to continue a plan already in progress. Example requests: "build my approved plan", "continue the plan at plans/foo.md", "run this plan task by task".'
 argument-hint: "[plan-path]"
 ---
 
