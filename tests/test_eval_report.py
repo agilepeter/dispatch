@@ -483,3 +483,107 @@ def test_a_half_is_rounded_up_the_way_a_reader_would(tmp_path):
     assert "| design-doc-before-implementer | 1.00 | 0.67 | +0.33 |" in (repo / "README.md").read_text(
         encoding="utf-8"
     )
+
+
+def _string_score(raw):
+    raw["cases"][0]["arms"]["with"][0]["score"] = "1"
+
+
+def _no_score(raw):
+    raw["cases"][0]["arms"]["without"][1]["score"] = None
+
+
+def _absent_score(raw):
+    del raw["cases"][2]["arms"]["with"][2]["score"]
+
+
+def _true_score(raw):
+    raw["cases"][0]["arms"]["with"][0]["score"] = True
+
+
+def _score_out_of_range(raw):
+    raw["cases"][0]["arms"]["with"][0]["score"] = 1.5
+
+
+@pytest.mark.parametrize(
+    "spoil",
+    [_string_score, _no_score, _absent_score, _true_score, _score_out_of_range],
+    ids=["a-string", "null", "absent", "a-boolean", "above-one"],
+)
+def test_a_session_without_a_score_between_zero_and_one_is_refused_not_counted_as_zero(tmp_path, spoil):
+    # A missing score read as 0 looks exactly like a run that failed every check.
+    repo = _copy_repo(tmp_path)
+    before = _report(repo).read_bytes() if _report(repo).exists() else None
+    raw = _raw()
+    spoil(raw)
+
+    _assert_refused(_summarize(repo, tmp_path, raw), "score")
+
+    after = _report(repo).read_bytes() if _report(repo).exists() else None
+    assert after == before
+
+
+def test_a_score_of_zero_is_a_score(tmp_path):
+    repo = _copy_repo(tmp_path)
+    raw = _raw()
+    raw["cases"][0]["arms"]["without"] = [
+        _session(0, [("does-the-thing", False), ("never-pushes", False)]) for _ in range(3)
+    ]
+
+    assert _summarize(repo, tmp_path, raw).returncode == 0
+
+    report = json.loads(_report(repo).read_text(encoding="utf-8"))
+    assert report["cases"][0]["without"]["scores"] == [0, 0, 0]
+    assert report["cases"][0]["delta"] == 1.0
+
+
+@pytest.mark.parametrize("name", ["Spec_Before Quality!", "", None, "with/slash", "UPPER"])
+def test_a_case_whose_name_is_not_a_plain_slug_is_refused(tmp_path, name):
+    repo = _copy_repo(tmp_path)
+    raw = _raw()
+    raw["cases"][0]["name"] = name
+
+    _assert_refused(_summarize(repo, tmp_path, raw), "name")
+
+
+@pytest.mark.parametrize(
+    "spoil",
+    ["{not json", "", "<<<<<<< HEAD\n{}\n=======\n{}\n>>>>>>> other\n", "[]", '"a string"'],
+    ids=["broken", "empty", "a-merge-conflict", "a-list", "a-string"],
+)
+def test_a_report_it_cannot_read_is_one_line_not_a_traceback(tmp_path, spoil):
+    repo = _copy_repo(tmp_path)
+    assert _summarize(repo, tmp_path, _raw()).returncode == 0
+    _report(repo).write_text(spoil, encoding="utf-8")
+    readme = (repo / "README.md").read_bytes()
+
+    for command in ("readme", "check"):
+        _assert_refused(_run(repo, command), "report")
+
+    assert (repo / "README.md").read_bytes() == readme
+
+
+def test_a_report_written_by_an_older_version_of_the_script_is_refused(tmp_path):
+    repo = _copy_repo(tmp_path)
+    assert _summarize(repo, tmp_path, _raw()).returncode == 0
+    report = json.loads(_report(repo).read_text(encoding="utf-8"))
+    report["schemaVersion"] = 1
+    _report(repo).write_text(json.dumps(report), encoding="utf-8")
+
+    _assert_refused(_run(repo, "check"), "summarize again")
+
+
+def test_a_readme_with_windows_line_endings_is_rewritten_with_plain_ones(tmp_path):
+    # Read with either ending, written with one: the file a checkout with its own endings
+    # gives back to git is normalised by git, not by guessing here.
+    repo = _copy_repo(tmp_path)
+    assert _summarize(repo, tmp_path, _raw()).returncode == 0
+    readme = repo / "README.md"
+    readme.write_bytes(readme.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+
+    assert _run(repo, "readme").returncode == 0
+
+    written = readme.read_bytes()
+    assert b"\r\n" not in written
+    assert b"| dirty-tree-blocks | 1.00 | 0.50 | +0.50 |" in written
+    assert _run(repo, "check").returncode == 0

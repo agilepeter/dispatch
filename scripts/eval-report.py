@@ -92,8 +92,20 @@ def grader_counts(runs):
     return {name: counts[name] for name in sorted(counts)}
 
 
-def arm_summary(runs):
-    scores = [run.get("score") or 0 for run in runs]
+def score_of(run, where):
+    """A session's score, which is a number from 0 to 1 or is not a score.
+
+    A score that is missing must not be read as 0: that is what a session that failed every
+    check looks like.
+    """
+    score = run.get("score")
+    if isinstance(score, bool) or not isinstance(score, (int, float)) or not 0 <= score <= 1:
+        raise Refused(f"{where} has a session whose score is not a number from 0 to 1")
+    return score
+
+
+def arm_summary(runs, where):
+    scores = [score_of(run, where) for run in runs]
     return {
         "runs": len(runs),
         # Counted before anything is rounded: a score a hair under one is not full marks.
@@ -120,6 +132,8 @@ def summarize(raw):
     for case in cases:
         arms = case.get("arms") or {}
         name = case.get("name")
+        if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name):
+            raise Refused(f"a case has a name that is not lower-case words joined by hyphens: {name!r}"[:120])
         for arm in ("with", "without"):
             runs = arms.get(arm) or []
             if not runs:
@@ -129,7 +143,8 @@ def summarize(raw):
                     raise Refused(f"{name} has a session that ended in an error ({arm} arm)")
                 if run.get("skippedPaidGraders"):
                     raise Refused(f"{name} has a session whose paid graders were skipped ({arm} arm)")
-        with_arm, without_arm = arm_summary(arms["with"]), arm_summary(arms["without"])
+        with_arm = arm_summary(arms["with"], f"{name} (with arm)")
+        without_arm = arm_summary(arms["without"], f"{name} (without arm)")
         out_cases.append(
             {
                 "name": name,
@@ -287,7 +302,12 @@ def load_report():
     path = report_path()
     if not path.exists():
         raise Refused(f"there is no report at evals/reports/{version()}/result.json; run summarize first")
-    report = json.loads(read_text(path))
+    try:
+        report = json.loads(read_text(path))
+    except (OSError, ValueError) as exc:
+        raise Refused(f"cannot read the report ({type(exc).__name__}); run summarize again")
+    if not isinstance(report, dict) or not isinstance(report.get("cases"), list):
+        raise Refused("the report is not the one this script writes; run summarize again")
     if report.get("schemaVersion") != 3:
         raise Refused("the report was written by an older version of this script; run summarize again")
     return report

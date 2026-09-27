@@ -45,7 +45,9 @@ already installed.
    that the skill would load with its metadata dropped. The test suite parses every skill's
    frontmatter strictly, which is why `pytest` is first on this list and cannot be skipped.
 5. Commit, push, and wait for CI to pass on all three operating systems.
-6. Tag and push the tag:
+6. Read the heading in `CHANGELOG.md` once more: its date is the day of the tag. If the
+   release slipped a day, change the date, commit, push and wait for CI again. Nothing
+   checks this for you. Then tag and push the tag:
 
    ```
    claude plugin tag --push .
@@ -75,6 +77,9 @@ neither link is broken for longer than a minute:
    curl -sI https://staas.fund/dispatch/ | head -1
    ```
 
+   The answer to wait for is a 200. A 404 for the first minute or two is the site still
+   deploying. A 404 after that means the page did not publish: find out why, and leave
+   the repository private until the page answers.
 3. Make the repository public. This is the one step that cannot be taken back:
 
    ```
@@ -82,6 +87,9 @@ neither link is broken for longer than a minute:
    ```
 
 4. Tag (step 6) and confirm the install from a fresh profile (step 7).
+
+The repository's description, homepage and topics are already set, and become visible with
+the repository: `gh repo view agilepeter/dispatch` shows them.
 
 ## What users do
 
