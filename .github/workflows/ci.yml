@@ -32,6 +32,7 @@ jobs:
         run: |
           test -x bin/dispatch-ledger
           test -x bin/dispatch-stats
+          test -x scripts/release-check.sh
 
       # python (not python3): actions/setup-python guarantees "python" on
       # every OS in the matrix; Windows runners do not reliably provide a

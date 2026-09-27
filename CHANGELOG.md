@@ -22,6 +22,8 @@
 
 - .claude-plugin/marketplace.json: Plugin marketplace entry.
 
-- Test suite: tests/test_ledger.py (tests for dispatch-ledger), tests/test_skill_references.py (validation of skill files, frontmatter, and references), tests/test_stats.py (tests for dispatch-stats).
+- scripts/release-check.sh: Pre-release checklist. Checks version agreement among `.claude-plugin/plugin.json`, the latest `CHANGELOG.md` heading, and `.claude-plugin/marketplace.json`; runs `claude plugin validate --strict` and a `claude plugin tag --dry-run`; and checks that the release tag (`<name>--v<version>`) does not already exist locally or on origin (`RELEASE_CHECK_OFFLINE=1` skips the origin check). Every check runs even after an earlier one fails, so one run reports everything that blocks the release. It only checks: it never creates or pushes a tag itself.
+
+- Test suite: tests/test_ledger.py (tests for dispatch-ledger), tests/test_skill_references.py (validation of skill files, frontmatter, and references), tests/test_stats.py (tests for dispatch-stats), tests/test_release_check.py (tests for scripts/release-check.sh).
 
 - CI: .github/workflows/ci.yml with matrix across Ubuntu, macOS, and Windows; Python 3.11; pytest suite on all three operating systems; plugin manifest validation on Ubuntu.

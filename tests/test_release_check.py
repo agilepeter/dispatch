@@ -64,6 +64,10 @@ def _plugin_version(repo) -> str:
     return json.loads((repo / ".claude-plugin" / "plugin.json").read_text())["version"]
 
 
+def _plugin_name(repo) -> str:
+    return json.loads((repo / ".claude-plugin" / "plugin.json").read_text())["name"]
+
+
 def _assert_single_failure(result, *needles):
     assert result.returncode == 1
     lines = result.stderr.splitlines()
@@ -95,7 +99,7 @@ def test_consistent_copy_passes(tmp_path):
     assert result.returncode == 0
     assert result.stderr == ""
     assert result.stdout.splitlines()[-1] == (
-        f"release-check: dispatch {_plugin_version(repo)} ok"
+        f"release-check: {_plugin_name(repo)} {_plugin_version(repo)} ok"
     )
 
 

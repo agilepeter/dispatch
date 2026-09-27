@@ -19,7 +19,14 @@ Leave this block empty and the coordinator fills it in before task 1: during the
 for a multi-file plan, it proposes commands from the repo's own manifests (package.json
 scripts, pytest or pyproject config, Cargo, a Makefile) and confirms them in that same
 approval; for a plan that skips the design pass, it asks once before task 1 and writes the
-answer here. Either way, filling this block is never a second approval stop. -->
+answer here. Either way, filling this block is never a second approval stop.
+
+Every gate here must pass on the baseline, before task 1 -- unless what it checks is something
+a later task creates (a script, a generated config) and simply cannot exist any earlier. Mark
+that gate with the task it starts applying from, as a trailing comment on the command's own
+line, e.g. `scripts/release-check.sh   # from task 2`. The coordinator adds this note into this
+Gates: block itself, during the design pass once the user agrees to it -- never into the
+Approved: line above. -->
 
 ## Tasks
 

@@ -191,3 +191,41 @@ def test_git_push_appears_only_in_the_no_self_push_constraint():
     assert "Never runs `git push` itself" in line, (
         f"the one 'git push' mention is not the no-self-push constraint: {path}:{lineno}: {line!r}"
     )
+
+
+def test_dispatch_git_exclude_step_runs_in_setup_and_resume():
+    """A run that needs `.dispatch/` for a design doc or an amendment -- not only for saving a
+    plan that lives only in this conversation -- still has to keep that folder out of git
+    before writing to it, or the next implementer's own clean-tree pre-flight sees the
+    coordinator's working files and stops cold. That has to hold whether a run is starting
+    fresh (Setup) or picking back up in a later session (Resume), since either one can be the
+    first to write under that folder.
+    """
+    text = read(SKILLS_DIR / "dispatch" / "SKILL.md")
+    marker = "0. Exclude `.dispatch/` from git"
+    setup = text[text.index("\n## Setup") : text.index("\n## Resume")]
+    resume = text[text.index("\n## Resume") : text.index("\n## Design pass and approval")]
+    assert marker in setup, "Setup has no step 0 opening with the git-exclude step"
+    assert marker in resume, "Resume has no step 0 opening with the git-exclude step"
+
+
+def test_implementer_owns_its_commit_in_skill_and_brief():
+    """Only the implementer that did the work may commit it. A coordinator that commits on an
+    implementer's behalf -- even just so the next reviewer has something to look at -- breaks
+    the link between the commit history and who actually wrote and checked the change. The
+    per-task loop and the brief handed to every implementer must say this the same way, so one
+    can never quietly drift from the other.
+    """
+    phrase = "The implementer commits its own work"
+    assert phrase in read(SKILLS_DIR / "dispatch" / "SKILL.md")
+    assert phrase in read(SKILLS_DIR / "dispatch" / "templates" / "implementer-brief.md")
+
+
+def test_plan_template_documents_a_gate_a_later_task_creates():
+    """A gate can check something that does not exist until a later task creates it -- a
+    generated script, a config file. The template has to show how to mark that gate so the
+    coordinator never tries to run it before it can possibly pass, and never mistakes its
+    absence on the baseline for a broken plan.
+    """
+    plan_template = read(SKILLS_DIR / "dispatch" / "templates" / "plan.md")
+    assert "# from task" in plan_template
