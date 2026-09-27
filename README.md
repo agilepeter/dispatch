@@ -92,6 +92,60 @@ fix in 51 of them (42%) after the implementer had already reported done.
 The [maker's own product page](https://staas.fund/dispatch/) carries this
 dataset's current numbers, refreshed on every publish.
 
+## Evals
+
+The plugin ships its own eval suite (`evals/`), scored with `claude plugin eval` and run
+both with the plugin loaded and against a no-plugin baseline, so a passing score means the
+plugin caused it rather than something Claude would have done anyway. Five cases, each
+against a tiny scaffolded fixture repo:
+
+- `design-doc-before-implementer` -- an unapproved, multi-file plan gets a design doc and
+  an approval question before any implementer runs.
+- `spec-before-quality` -- once a plan is approved with its design doc in place, the spec
+  reviewer runs before the quality reviewer, and the task gets ticked.
+- `one-ledger-row-per-task` -- a single task run logs exactly one well-formed, 13-column
+  ledger row.
+- `dirty-tree-blocks` -- an unrelated uncommitted change stops the run cold, with no edits
+  and no git surgery to make it disappear.
+- `reviewer-reads-code` -- a false "all tests pass" report doesn't survive spec review,
+  which reads the code and catches the gap.
+
+Release run, Claude Code 2.1.283, `--runs 3 --ablation with-without`:
+
+| Case | With plugin | Without | Delta |
+|---|---|---|---|
+| design-doc-before-implementer | 0.92 | 0.75 | +0.17 |
+| spec-before-quality | 1.00 | 0.44 | +0.56 |
+| one-ledger-row-per-task | 1.00 | 0.33 | +0.67 |
+| dirty-tree-blocks | 1.00 | 0.80 | +0.20 |
+| reviewer-reads-code | 1.00 | 0.67 | +0.33 |
+
+Mean delta +0.38. Total cost $8.57; the 30 runs behind the first four rows took 16m18s
+wall clock at concurrency 4, plus another 86s to re-verify `dirty-tree-blocks` after a
+fix this suite itself found (below). Four of five cases scored a clean 1.00 with the
+plugin loaded across all three repeats; `design-doc-before-implementer` had one repeat
+where the model judged a borderline plan mechanical enough to skip the design pass, a
+real, reported-as-is judgment call rather than a bug. Full per-grader numbers, cost, and
+timing live in `evals/reports/0.1.0/`.
+
+Building this suite found one real bug: in roughly a third of `dirty-tree-blocks` runs,
+the coordinator noticed someone's uncommitted, unrelated edit during its own setup and
+quietly `git stash`ed it to get a clean tree, instead of stopping to ask -- exactly the
+shortcut the plugin exists to prevent an implementer from taking, just one level up.
+SKILL.md's clean-tree lesson now says so explicitly, and every repeat since is clean.
+
+Reproduce with Claude Code 2.1.283 or later:
+
+```
+claude plugin eval . --model sonnet --ablation with-without --runs 3 \
+  --scaffold --trust-plugin --no-publish --allow-tools Bash Write Edit \
+  --max-cost-usd 25 --json evals/reports/0.1.0/result.json
+```
+
+The raw `--json` and `--report` output embeds the sandbox's local paths and full
+transcripts; scrub both before committing, the way `evals/reports/0.1.0/result.json`
+in this repo already has.
+
 ## The ledger
 
 Every task run appends one TSV row:

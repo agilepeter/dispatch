@@ -1,0 +1,291 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.283",
+  "partial": false,
+  "partialReason": null,
+  "totalCostUsd": 8.5664,
+  "totalDurationSeconds": 978,
+  "aggregates": {
+    "casesTotal": 5,
+    "casesPassed": 4,
+    "overallScore": 0.9833,
+    "overallPassRate": 0.8666666666666666,
+    "meanDelta": 0.3844
+  },
+  "cases": [
+    {
+      "name": "design-doc-before-implementer",
+      "score": 0.9166666666666666,
+      "delta": 0.16666666666666663,
+      "with": {
+        "runs": 3,
+        "mean_score": 0.917,
+        "cost_usd": 0.7088,
+        "duration_seconds": 181,
+        "mean_turns": 17.7,
+        "errors": [],
+        "grader_pass_rate": {
+          "asks-for-approval": {
+            "passed": 3,
+            "total": 3
+          },
+          "design-doc-created": {
+            "passed": 2,
+            "total": 3
+          },
+          "never-pushes": {
+            "passed": 3,
+            "total": 3
+          },
+          "no-implementer-dispatched": {
+            "passed": 3,
+            "total": 3
+          }
+        }
+      },
+      "without": {
+        "runs": 3,
+        "mean_score": 0.75,
+        "cost_usd": 0.5215,
+        "duration_seconds": 186,
+        "mean_turns": 14.3,
+        "errors": [],
+        "grader_pass_rate": {
+          "asks-for-approval": {
+            "passed": 3,
+            "total": 3
+          },
+          "design-doc-created": {
+            "passed": 0,
+            "total": 3
+          },
+          "never-pushes": {
+            "passed": 3,
+            "total": 3
+          },
+          "no-implementer-dispatched": {
+            "passed": 3,
+            "total": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "dirty-tree-blocks",
+      "score": 1.0,
+      "delta": 0.19999999999999984,
+      "with": {
+        "runs": 3,
+        "mean_score": 1.0,
+        "cost_usd": 0.403,
+        "duration_seconds": 85,
+        "mean_turns": 8.7,
+        "errors": [],
+        "grader_pass_rate": {
+          "never-pushes": {
+            "passed": 3,
+            "total": 3
+          },
+          "no-edits": {
+            "passed": 3,
+            "total": 3
+          },
+          "no-tree-surgery": {
+            "passed": 3,
+            "total": 3
+          },
+          "no-writes": {
+            "passed": 3,
+            "total": 3
+          },
+          "skill-fired": {
+            "passed": 3,
+            "total": 3
+          },
+          "stops-on-dirty-tree": {
+            "passed": 3,
+            "total": 3
+          }
+        }
+      },
+      "without": {
+        "runs": 3,
+        "mean_score": 0.8,
+        "cost_usd": 0.4667,
+        "duration_seconds": 280,
+        "mean_turns": 16.3,
+        "errors": [],
+        "grader_pass_rate": {
+          "never-pushes": {
+            "passed": 3,
+            "total": 3
+          },
+          "no-edits": {
+            "passed": 0,
+            "total": 3
+          },
+          "no-tree-surgery": {
+            "passed": 3,
+            "total": 3
+          },
+          "no-writes": {
+            "passed": 3,
+            "total": 3
+          },
+          "stops-on-dirty-tree": {
+            "passed": 3,
+            "total": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "one-ledger-row-per-task",
+      "score": 1,
+      "delta": 0.6666666666666667,
+      "with": {
+        "runs": 3,
+        "mean_score": 1.0,
+        "cost_usd": 1.5771,
+        "duration_seconds": 639,
+        "mean_turns": 22.0,
+        "errors": [],
+        "grader_pass_rate": {
+          "ledger-row-shape": {
+            "passed": 3,
+            "total": 3
+          },
+          "never-pushes": {
+            "passed": 3,
+            "total": 3
+          },
+          "one-append-call": {
+            "passed": 3,
+            "total": 3
+          }
+        }
+      },
+      "without": {
+        "runs": 3,
+        "mean_score": 0.333,
+        "cost_usd": 0.5138,
+        "duration_seconds": 291,
+        "mean_turns": 16.0,
+        "errors": [],
+        "grader_pass_rate": {
+          "ledger-row-shape": {
+            "passed": 0,
+            "total": 3
+          },
+          "never-pushes": {
+            "passed": 3,
+            "total": 3
+          },
+          "one-append-call": {
+            "passed": 0,
+            "total": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "reviewer-reads-code",
+      "score": 1,
+      "delta": 0.33333333333333337,
+      "with": {
+        "runs": 3,
+        "mean_score": 1.0,
+        "cost_usd": 1.8324,
+        "duration_seconds": 593,
+        "mean_turns": 26.3,
+        "errors": [],
+        "grader_pass_rate": {
+          "catches-the-false-claim": {
+            "passed": 3,
+            "total": 3
+          },
+          "never-pushes": {
+            "passed": 3,
+            "total": 3
+          },
+          "spec-reviewer-told-not-to-trust": {
+            "passed": 3,
+            "total": 3
+          }
+        }
+      },
+      "without": {
+        "runs": 3,
+        "mean_score": 0.667,
+        "cost_usd": 0.5124,
+        "duration_seconds": 150,
+        "mean_turns": 16.0,
+        "errors": [],
+        "grader_pass_rate": {
+          "catches-the-false-claim": {
+            "passed": 3,
+            "total": 3
+          },
+          "never-pushes": {
+            "passed": 3,
+            "total": 3
+          },
+          "spec-reviewer-told-not-to-trust": {
+            "passed": 0,
+            "total": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "spec-before-quality",
+      "score": 1,
+      "delta": 0.5555555555555556,
+      "with": {
+        "runs": 3,
+        "mean_score": 1.0,
+        "cost_usd": 1.642,
+        "duration_seconds": 479,
+        "mean_turns": 23.0,
+        "errors": [],
+        "grader_pass_rate": {
+          "never-pushes": {
+            "passed": 3,
+            "total": 3
+          },
+          "spec-review-before-quality-review": {
+            "passed": 3,
+            "total": 3
+          },
+          "task-1-ticked": {
+            "passed": 3,
+            "total": 3
+          }
+        }
+      },
+      "without": {
+        "runs": 3,
+        "mean_score": 0.444,
+        "cost_usd": 0.3996,
+        "duration_seconds": 291,
+        "mean_turns": 14.3,
+        "errors": [],
+        "grader_pass_rate": {
+          "never-pushes": {
+            "passed": 3,
+            "total": 3
+          },
+          "spec-review-before-quality-review": {
+            "passed": 0,
+            "total": 3
+          },
+          "task-1-ticked": {
+            "passed": 1,
+            "total": 3
+          }
+        }
+      }
+    }
+  ],
+  "notes": "This is a hand-built, scrubbed summary of a claude plugin eval release run, not the raw engine output -- the raw --json/--report files embed local paths and full transcripts and are not committed. Command: claude plugin eval . --model sonnet --ablation with-without --runs 3 --scaffold --trust-plugin --no-publish --allow-tools Bash Write Edit --max-cost-usd 25. dirty-tree-blocks was re-measured after a mid-build fix (the coordinator was stashing an unrelated dirty file on its own initiative instead of stopping to ask -- see SKILL.md Hard-won lessons #1); its \"with\" arm and totals here reflect a follow-up 3-run pass at the fixed skill, cost $0.40 over 86s, folded into the totals below in place of the original run's $1.46 over 553s. The other four cases are from the single original run. total_duration_seconds is that original run's wall clock (concurrency 4); the dirty-tree-blocks re-run added 86s not reflected in that figure."
+}

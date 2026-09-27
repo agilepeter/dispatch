@@ -37,7 +37,10 @@ Edit this block, and only this block, to move any of these:
   folder.
 - The ledger is written only through `${CLAUDE_PLUGIN_ROOT}/bin/dispatch-ledger append ...`,
   never a hand-built line. Always pass the plan's **absolute** path as `--plan` so a later
-  resume, possibly in a different session, matches its rows exactly.
+  resume, possibly in a different session, matches its rows exactly. It lands at
+  `$DISPATCH_LEDGER` when that's set in the environment, otherwise `~/.claude/dispatch/runs.tsv`
+  -- if the user names a specific ledger location, export `DISPATCH_LEDGER` to it before calling
+  `dispatch-ledger` rather than inventing a different flag or writing the row by hand.
 
 ## Entry points
 
@@ -213,7 +216,11 @@ ${CLAUDE_PLUGIN_ROOT}/bin/dispatch-ledger append \
 
 1. **Clean-tree pre-flight.** Every implementer brief opens with `git status --short` must be
    empty, or the implementer stops and reports `BLOCKED`. This is what catches the next lesson
-   before it compounds.
+   before it compounds. The same rule binds the coordinator's own Setup step: finding a dirty
+   tree there is a stop-and-tell-the-user moment, never something to clear on the coordinator's
+   own initiative with `git stash`, `git checkout --`, or `git reset` -- even a reversible stash
+   can surprise a user who forgot what was in it, or collide with a task that touches the same
+   file.
 2. **A dead or errored agent can leave work behind.** Handled in Stage 1's "if the previous
    attempt ended in an agent error" step above -- never skip it.
 3. **Put the shape of the code in the brief, not in the review.** When you already know a

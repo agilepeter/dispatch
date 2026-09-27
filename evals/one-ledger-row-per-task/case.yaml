@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: one-ledger-row-per-task
+tags: [dispatch, ledger]
+context:
+  scaffold_script: scaffold.sh
