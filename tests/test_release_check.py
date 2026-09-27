@@ -118,3 +118,47 @@ def test_marketplace_version_mismatch_fails(tmp_path):
     result = _run(repo, tmp_path)
 
     _assert_single_failure(result, "marketplace.json", "9.9.9")
+
+
+@needs_git
+def test_malformed_marketplace_json_fails(tmp_path):
+    repo = _copy_repo(tmp_path, git_init=True)
+    (repo / ".claude-plugin" / "marketplace.json").write_text("{bad")
+
+    result = _run(repo, tmp_path)
+
+    _assert_single_failure(result, "marketplace.json")
+
+
+@needs_git
+def test_marketplace_plugins_not_a_list_fails(tmp_path):
+    repo = _copy_repo(tmp_path, git_init=True)
+    (repo / ".claude-plugin" / "marketplace.json").write_text('{"plugins": {}}')
+
+    result = _run(repo, tmp_path)
+
+    _assert_single_failure(result, "marketplace.json")
+
+
+@needs_git
+def test_marketplace_entry_without_version_is_ignored(tmp_path):
+    repo = _copy_repo(tmp_path, git_init=True)
+    data = json.loads((repo / ".claude-plugin" / "marketplace.json").read_text())
+    assert "version" not in data["plugins"][0]
+
+    result = _run(repo, tmp_path)
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+
+
+@needs_git
+def test_copy_inside_another_repo_is_not_a_repo(tmp_path):
+    # The enclosing directory is a repository; the copy itself is not, so its
+    # tags must not be looked up in the parent.
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    repo = _copy_repo(tmp_path)
+
+    result = _run(repo, tmp_path)
+
+    _assert_single_failure(result, "not a git repository")

@@ -33,16 +33,26 @@ plugin_name() {
 }
 
 # Prints the marketplace entry's version for the named plugin, or nothing when
-# the file, the entry, or its version is absent.
+# the file, the entry, or its version is absent (nothing to compare). An
+# unparseable file or a non-list "plugins" exits 2 with a one-line reason on
+# stdout, so that condition cannot be mistaken for "nothing to compare".
 marketplace_version() {
   python3 - "$1" <<'PY'
 import json, sys
 try:
-    data = json.load(open(".claude-plugin/marketplace.json"))
-except OSError:
+    with open(".claude-plugin/marketplace.json") as f:
+        data = json.load(f)
+except FileNotFoundError:
     sys.exit(0)
-for entry in data.get("plugins", []):
-    if entry.get("name") == sys.argv[1] and entry.get("version"):
+except (OSError, ValueError) as exc:
+    print("cannot parse it (%s)" % type(exc).__name__)
+    sys.exit(2)
+plugins = data.get("plugins", []) if isinstance(data, dict) else None
+if not isinstance(plugins, list):
+    print('"plugins" is not a list')
+    sys.exit(2)
+for entry in plugins:
+    if isinstance(entry, dict) and entry.get("name") == sys.argv[1] and entry.get("version"):
         print(entry["version"])
 PY
 }
@@ -63,8 +73,9 @@ elif [ "$changelog_version" != "$version" ]; then
   fail "CHANGELOG.md version $changelog_version does not match plugin.json version $version"
 fi
 
-market_version="$(marketplace_version "$name" 2>/dev/null || true)"
-if [ -n "$market_version" ] && [ "$market_version" != "$version" ]; then
+if ! market_version="$(marketplace_version "$name" 2>/dev/null)"; then
+  fail "marketplace.json is unusable: $(first_line "$market_version")"
+elif [ -n "$market_version" ] && [ "$market_version" != "$version" ]; then
   fail "marketplace.json version $market_version does not match plugin.json version $version"
 fi
 
