@@ -50,7 +50,9 @@ jobs:
       # catches whatever else that tool checks beyond plain YAML validity.
       - name: Install Claude Code CLI
         if: matrix.os == 'ubuntu-latest'
-        run: npm install -g @anthropic-ai/claude-code
+        # Pinned like everything else here, so a validator change upstream arrives as a
+        # deliberate bump in this file, never as an unexplained red run.
+        run: npm install -g @anthropic-ai/claude-code@2.1.283
 
       - name: Validate the plugin manifest and marketplace entry
         if: matrix.os == 'ubuntu-latest'

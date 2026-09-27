@@ -150,7 +150,7 @@ def test_no_owner_specific_or_disallowed_strings():
         text = read(path)
         if path.name == "README.md":
             for allowed in README_ALLOWED_REFERENCES:
-                text = text.replace(allowed, "")
+                text = text.replace(allowed, "", 1)  # one blessed occurrence, never a repeat
         for label, pattern in LEAK_PATTERNS.items():
             assert not pattern.search(text), f"{path}: contains {label}"
 
