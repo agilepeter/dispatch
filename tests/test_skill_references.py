@@ -229,3 +229,18 @@ def test_plan_template_documents_a_gate_a_later_task_creates():
     """
     plan_template = read(SKILLS_DIR / "dispatch" / "templates" / "plan.md")
     assert "# from task" in plan_template
+
+
+def test_coordinator_post_cap_fix_exception_is_stated_in_both_stages():
+    """Only the implementer commits its own work, with exactly one exception: a small fix the
+    coordinator makes itself after a review loop-cap escalation. Stage 1 states the general
+    rule and has to name that exception rather than silently contradict it, and Stage 2 is
+    where the exception is spelled out in full. If either one drops the word "exception", the
+    two rules can drift back into contradicting each other the way they once did.
+    """
+    text = read(SKILLS_DIR / "dispatch" / "SKILL.md")
+    marker = "the sole exception"
+    stage1 = text[text.index("**Stage 1") : text.index("**Stage 2")]
+    stage2 = text[text.index("**Stage 2") : text.index("**Stage 3")]
+    assert marker in stage1, "Stage 1 never names the post-cap fix as an exception"
+    assert marker in stage2, "Stage 2 never names the post-cap fix as an exception"

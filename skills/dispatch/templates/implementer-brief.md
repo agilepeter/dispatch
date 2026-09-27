@@ -57,6 +57,7 @@ Fix anything you find before reporting.
 - What you implemented
 - What you tested, and the result
 - Files changed
+- Commit: `<sha> <one-line message>`
 - Concerns, if any
 
 It is always OK to stop and escalate. Bad work is worse than no work.
