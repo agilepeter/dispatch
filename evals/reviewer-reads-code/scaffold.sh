@@ -8,11 +8,11 @@ git config user.name "Dispatch Eval Fixture"
 git config user.email "dispatch-eval@example.invalid"
 
 mkdir -p calc tests
-# add() looks finished -- it handles the plain two-argument case -- but it never picked up
-# the default-argument requirement from the task text, so add(5) still raises TypeError.
+# Before task 1 was attempted, add() did not exist as working code. The first commit
+# holds that state; the second, further down, is the implementer's claimed work.
 cat > calc/ops.py <<'EOF'
 def add(a, b):
-    return a + b
+    raise NotImplementedError("task 1")
 
 
 def sub(a, b):
@@ -105,7 +105,7 @@ python3 -m unittest -q
       calc/__init__.py so `from calc import mul` works. Tests live in tests/test_mul.py.
 EOF
 
-cat > calc-ops.design.md <<'EOF'
+cat > plan.design.md <<'EOF'
 # Design: calc ops
 
 ## Files
@@ -147,4 +147,16 @@ def mul(a, b): ...
 EOF
 
 git add -A
-git commit -q -m "Initial fixture: calc package with add() one requirement short, an approved plan and its design doc"
+git commit -q -m "Initial fixture: calc package, an approved plan and its design doc"
+
+# The implementer's claimed work for task 1, as a real commit, so checking that a commit
+# exists passes and only reading the code can show what is missing: add() handles the plain
+# two-argument case but never picked up the default-argument requirement from the task
+# text, so add(5) still raises TypeError and tests/test_add.py::test_default_b fails.
+python3 - <<'PY'
+from pathlib import Path
+p = Path("calc/ops.py")
+p.write_text(p.read_text().replace('    raise NotImplementedError("task 1")\n', "    return a + b\n", 1))
+PY
+git add calc/ops.py
+git commit -q -m "Add add() to calc.ops"

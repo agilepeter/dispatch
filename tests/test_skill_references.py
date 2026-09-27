@@ -244,3 +244,13 @@ def test_coordinator_post_cap_fix_exception_is_stated_in_both_stages():
     stage2 = text[text.index("**Stage 2") : text.index("**Stage 3")]
     assert marker in stage1, "Stage 1 never names the post-cap fix as an exception"
     assert marker in stage2, "Stage 2 never names the post-cap fix as an exception"
+
+
+def test_design_pass_is_chosen_by_counting_files_not_by_judging_difficulty():
+    """Whether a plan gets a design pass must not depend on how simple its tasks look to
+    whoever is reading it: the same plan has to take the same path every time."""
+    skill = (Path(__file__).resolve().parent.parent / "skills" / "dispatch" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Count files and interfaces, not difficulty" in skill
+    assert "Single-file or mechanical plans" not in skill

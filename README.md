@@ -102,56 +102,71 @@ dataset's current numbers, refreshed on every publish.
 ## Evals
 
 The plugin ships its own eval suite (`evals/`), scored with `claude plugin eval` and run
-both with the plugin loaded and against a no-plugin baseline, so a passing score means the
-plugin caused it rather than something Claude would have done anyway. Five cases, each
-against a tiny scaffolded fixture repo:
+both with the plugin loaded and against a no-plugin baseline, so a score says what the
+plugin changed rather than what Claude would have done anyway. Five cases, each against a
+tiny scaffolded fixture repo:
 
-- `design-doc-before-implementer` -- an unapproved, multi-file plan gets a design doc and
-  an approval question before any implementer runs.
+- `design-doc-before-implementer` -- a multi-file plan that nobody has approved yet gets a
+  design doc and one approval question before any implementer runs.
 - `spec-before-quality` -- once a plan is approved with its design doc in place, the spec
   reviewer runs before the quality reviewer, and the task gets ticked.
 - `one-ledger-row-per-task` -- a single task run logs exactly one well-formed, 13-column
   ledger row.
 - `dirty-tree-blocks` -- an unrelated uncommitted change stops the run cold, with no edits
   and no git surgery to make it disappear.
-- `reviewer-reads-code` -- a false "all tests pass" report doesn't survive spec review,
-  which reads the code and catches the gap.
+- `reviewer-reads-code` -- an implementer's commit and its "all tests pass" report do not
+  survive spec review, which reads the code and finds what is missing.
 
 Release run, Claude Code 2.1.283, `--runs 3 --ablation with-without`:
 
 | Case | With plugin | Without | Delta |
 |---|---|---|---|
-| design-doc-before-implementer | 0.92 | 0.75 | +0.17 |
-| spec-before-quality | 1.00 | 0.44 | +0.56 |
+| design-doc-before-implementer | 1.00 | 0.75 | +0.25 |
+| spec-before-quality | 1.00 | 0.56 | +0.44 |
 | one-ledger-row-per-task | 1.00 | 0.33 | +0.67 |
-| dirty-tree-blocks | 1.00 | 0.80 | +0.20 |
+| dirty-tree-blocks | 1.00 | 0.60 | +0.40 |
 | reviewer-reads-code | 1.00 | 0.67 | +0.33 |
 
-Mean delta +0.38. Total cost $8.57; the 30 runs behind the first four rows took 16m18s
-wall clock at concurrency 4, plus another 86s to re-verify `dirty-tree-blocks` after a
-fix this suite itself found (below). Four of five cases scored a clean 1.00 with the
-plugin loaded across all three repeats; `design-doc-before-implementer` had one repeat
-where the model judged a borderline plan mechanical enough to skip the design pass, a
-real, reported-as-is judgment call rather than a bug. Full per-grader numbers, cost, and
-timing live in `evals/reports/0.1.0/`.
+Mean delta +0.42, from one complete run of 30 sessions: 13m38s wall clock at concurrency
+4, $9.19 at list price. All five cases scored 1.00 with the plugin loaded in all three
+repeats. Three repeats per arm is a small sample, and the plugin and the suite were both
+revised between runs until this one, so read these as the scores of the final suite
+against the final plugin, not of a first attempt. Per-grader pass rates for both arms are
+in `evals/reports/0.1.0/result.json`.
 
-Building this suite found one real bug: in roughly a third of `dirty-tree-blocks` runs,
-the coordinator noticed someone's uncommitted, unrelated edit during its own setup and
-quietly `git stash`ed it to get a clean tree, instead of stopping to ask -- exactly the
-shortcut the plugin exists to prevent an implementer from taking, just one level up.
-SKILL.md's clean-tree lesson now says so explicitly, and every repeat since is clean.
+Building and re-running this suite changed the plugin four times, each time from a run
+that showed the problem:
+
+- The coordinator noticed someone's uncommitted, unrelated edit during its own setup and
+  quietly stashed it to get a clean tree, instead of stopping to ask. The clean-tree rule
+  now binds the coordinator as well as the implementer.
+- Whether a plan got a design pass depended on how simple its tasks looked to the
+  coordinator, and the same plan went both ways in different runs. The design pass is now
+  chosen by counting files and interfaces.
+- A coordinator sometimes handed a reviewer a paraphrase of its template, which loses the
+  exact wording that tells the reviewer not to trust the report. Every stage now pastes the
+  template's actual text.
+- The skill did not always trigger for someone who wanted to start on a plan that was not
+  approved yet, although the approval happens inside it. Its trigger text now says so.
+
+The suite changed as well. Three graders were tightened so that a passing mention of a
+phrase cannot satisfy them, and two fixtures were corrected: the design doc now carries the
+file name the skill looks for, and the work under review in `reviewer-reads-code` is a real
+commit instead of a claim in the prompt.
 
 Reproduce with Claude Code 2.1.283 or later:
 
 ```
-claude plugin eval . --model sonnet --ablation with-without --runs 3 \
-  --scaffold --trust-plugin --no-publish --allow-tools Bash Write Edit \
-  --max-cost-usd 25 --json evals/reports/0.1.0/result.json
+claude plugin eval . --model sonnet --judge-model haiku --ablation with-without \
+  --runs 3 -j 4 --scaffold --trust-plugin --no-publish \
+  --allow-tools Bash Write Edit --json result.json
 ```
 
-The raw `--json` and `--report` output embeds the sandbox's local paths and full
-transcripts; scrub both before committing, the way `evals/reports/0.1.0/result.json`
-in this repo already has.
+Add `--max-cost-usd <n>` if you want a ceiling: it is a guard against a runaway run, not a
+budget the suite needs, and a run that hits it reports partial results that should not be
+quoted. The raw `--json` and `--report` output embeds the sandbox's local paths and full
+transcripts; scrub both before committing, the way `evals/reports/0.1.0/result.json` in
+this repo already has.
 
 ## The ledger
 

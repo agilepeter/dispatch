@@ -1,7 +1,7 @@
 # Design: <plan name>
 
-Written once, before task 1, for a multi-file plan -- never for a plan where every task is
-single-file or mechanical. Read the relevant existing code before writing this; design
+Written once, before task 1, for a multi-file plan -- never for a plan where every task
+edits a single file and adds no interface another task uses. Read the relevant existing code before writing this; design
 against the codebase that exists, not an imagined one.
 
 ## Files

@@ -103,7 +103,7 @@ python3 -m unittest -q
       calc/__init__.py so `from calc import mul` works. Tests live in tests/test_mul.py.
 EOF
 
-cat > calc-ops.design.md <<'EOF'
+cat > plan.design.md <<'EOF'
 # Design: calc ops
 
 ## Files

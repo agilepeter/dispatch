@@ -1,7 +1,7 @@
 ---
 name: dispatch
 description: Build an approved plan of three or more checkbox tasks, one task at a time, with a fresh implementer, a spec reviewer, a quality reviewer, an exit-code gate and a ledger row per task.
-when_to_use: 'Use when the user approves a multi-task plan and wants it built, or wants to continue a plan already in progress. Example requests: "build my approved plan", "continue the plan at plans/foo.md", "run this plan task by task".'
+when_to_use: 'Use when the user has a plan of three or more checkbox tasks and wants to start on it, approves one and wants it built, or wants to continue a plan already in progress. The design pass and the plan approval happen inside this skill, so a plan does not need to be approved first. Example requests: "here is my plan in plan.md, let us get started", "build my approved plan", "continue the plan at plans/foo.md", "run this plan task by task".'
 argument-hint: "[plan-path]"
 ---
 
@@ -12,11 +12,13 @@ approved the plan in this conversation.
 ## When this runs
 
 Automatically, when all of these are true: a plan exists with three or more checkbox tasks
-(`- [ ]`), the user has approved it (said "do it", "build it", "ship it", "go", or similar),
-and the tasks involve code changes. Also runs directly as `/dispatch <plan-path>`.
+(`- [ ]`), the user has asked to build it or to start on it (said "do it", "build it", "let's
+get started", "go", or similar), and the tasks involve code changes. Asking to start is not
+the plan's one approval: that is given inside this skill, after the design pass, and recorded
+in the plan's `Approved:` line. Also runs directly as `/dispatch <plan-path>`.
 
 Do not run it for: a one- or two-task plan (just do those directly); a research or exploration
-plan (no code for a reviewer to check); a plan the user has not approved yet.
+plan (no code for a reviewer to check); a plan the user only wants drafted or discussed.
 
 ## Where things live
 
@@ -103,7 +105,7 @@ never a full model id, which changes over time and varies by provider.
    quality reviewer's diff) -- recaptured fresh every time Setup runs, including right after
    a Resume.
 4. Run the design-and-approval step below: the full design pass for a multi-file plan, or its
-   lighter single-file/mechanical path.
+   lighter single-file path.
 
 ## Resume (before Setup, every time)
 
@@ -133,6 +135,13 @@ this conversation) capture everything decided. Nothing important may exist only 
 
 ## Design pass and approval (before task 1)
 
+**Which path.** Count files and interfaces, not difficulty. A plan takes the design pass
+when any task creates or changes more than one file, or adds or changes a function, type,
+command or file format that another task or an existing caller uses. Only a plan whose every
+task edits one file and touches no such interface skips it. How simple the tasks look is not
+a reason to skip: when in doubt, run the design pass, because it costs one question and a
+wrong signature costs a review loop on every task that touches it.
+
 **Multi-file plans.** Read the relevant existing code first -- design against the codebase
 that exists, never an imagined one. Write `<slug>.design.md` from
 `${CLAUDE_SKILL_DIR}/templates/design.md`. Show the user only its "Types & signatures" and
@@ -144,7 +153,7 @@ manifests (package.json scripts, pytest/pyproject config, Cargo, a Makefile) in 
 approval step. A gate a later task creates is annotated `# from task N` in that block, per
 the plan template -- never in the `Approved:` line.
 
-**Single-file or mechanical plans (design pass skipped).** Before task 1, ask once for the
+**Single-file plans (design pass skipped).** Before task 1, ask once for the
 `Gates:` commands to run after every task, and write the answer into the plan's `Gates:`
 block. In that same exchange, write this plan's one `Approved:` line too -- the date first,
 then the words the user already approved the plan with. A plan on this path never gets a
@@ -162,6 +171,11 @@ the design doc quietly drift apart.
 Initialize before Stage 1: `impl_loops = 1`, `spec_loops = 0`, `quality_loops = 0`,
 `model_impl` = the starting tier. If a task later escalates tiers, append each new one with
 `+`, lowest first, e.g. `sonnet+opus` (only tiers actually used, never a skipped one).
+
+Every stage below says to paste a template -- read the file fresh each time and paste its
+actual text, not a summary or a reconstruction from memory. A subagent handed a paraphrase
+instead of the real file is missing exact phrasing the checklist, the anti-trust framing, and
+this skill's own evals all depend on, even when the paraphrase captures the general idea.
 
 **Stage 1 -- Implement.** Spawn a fresh implementer subagent on the model from Defaults. Paste
 `${CLAUDE_SKILL_DIR}/templates/implementer-brief.md`, then the task's full text, then the
