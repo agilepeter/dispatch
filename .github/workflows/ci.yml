@@ -33,12 +33,13 @@ jobs:
           test -x bin/dispatch-ledger
           test -x bin/dispatch-stats
           test -x scripts/release-check.sh
+          test -x scripts/eval-report.py
 
       # python (not python3): actions/setup-python guarantees "python" on
       # every OS in the matrix; Windows runners do not reliably provide a
       # "python3" alias.
       - name: Byte-compile scripts
-        run: python -m py_compile bin/dispatch-ledger bin/dispatch-stats
+        run: python -m py_compile bin/dispatch-ledger bin/dispatch-stats scripts/eval-report.py
 
       - name: Run tests
         # -rs names every skipped test and its reason, so a green leg says exactly
@@ -50,9 +51,9 @@ jobs:
       # new. It checks what the tool itself checks: the schema of both manifests, and that
       # every skill has frontmatter and a description. It does not check that the
       # frontmatter is valid YAML. The version pinned below accepts a value with an
-      # unquoted colon in it, while Claude Code 2.1.210 rejects the same file and loads
-      # the skill with all of its metadata dropped. pytest's strict parse is what protects
-      # someone on an older version, so neither check replaces the other.
+      # unquoted colon in it, while Claude Code 2.1.210 rejects the same file and reports
+      # that the skill would load with all of its metadata dropped. pytest's strict parse
+      # is what protects someone on an older version, so neither check replaces the other.
       - name: Install Claude Code CLI
         if: matrix.os == 'ubuntu-latest'
         # Pinned like everything else here, so a validator change upstream arrives as a

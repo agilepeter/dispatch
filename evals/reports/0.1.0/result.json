@@ -1,347 +1,421 @@
 {
-  "schemaVersion": 1,
-  "claudeVersion": "2.1.283",
-  "partial": false,
-  "partialReason": null,
-  "totalCostUsd": 9.1884,
-  "totalDurationSeconds": 818,
-  "aggregates": {
-    "casesTotal": 5,
-    "casesPassed": 5,
-    "overallScore": 1,
-    "overallPassRate": 1,
-    "meanDelta": 0.418888888888889
-  },
-  "cases": [
-    {
-      "name": "design-doc-before-implementer",
-      "score": 1,
-      "delta": 0.25,
-      "with": {
-        "runs": 3,
-        "mean_score": 1.0,
-        "cost_usd": 0.7107,
-        "duration_seconds": 171,
-        "mean_turns": 18.7,
-        "errors": [],
-        "grader_pass_rate": {
-          "asks-for-approval": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "design-doc-created": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "never-pushes": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "no-implementer-dispatched": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "skill-fired": {
-            "passed": 3,
-            "total": 3,
-            "scored": false
-          }
-        }
-      },
-      "without": {
-        "runs": 3,
-        "mean_score": 0.75,
-        "cost_usd": 0.2886,
-        "duration_seconds": 86,
-        "mean_turns": 4.7,
-        "errors": [],
-        "grader_pass_rate": {
-          "asks-for-approval": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "design-doc-created": {
-            "passed": 0,
-            "total": 3,
-            "scored": true
-          },
-          "never-pushes": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "no-implementer-dispatched": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          }
-        }
-      }
-    },
-    {
-      "name": "dirty-tree-blocks",
-      "score": 1,
-      "delta": 0.4,
-      "with": {
-        "runs": 3,
-        "mean_score": 1.0,
-        "cost_usd": 0.4176,
-        "duration_seconds": 81,
-        "mean_turns": 7.3,
-        "errors": [],
-        "grader_pass_rate": {
-          "never-pushes": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "no-edits": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "no-tree-surgery": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "no-writes": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "skill-fired": {
-            "passed": 3,
-            "total": 3,
-            "scored": false
-          },
-          "stops-on-dirty-tree": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          }
-        }
-      },
-      "without": {
-        "runs": 3,
-        "mean_score": 0.6,
-        "cost_usd": 0.5311,
-        "duration_seconds": 132,
-        "mean_turns": 18.3,
-        "errors": [],
-        "grader_pass_rate": {
-          "never-pushes": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "no-edits": {
-            "passed": 0,
-            "total": 3,
-            "scored": true
-          },
-          "no-tree-surgery": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "no-writes": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "stops-on-dirty-tree": {
-            "passed": 0,
-            "total": 3,
-            "scored": true
-          }
-        }
-      }
-    },
-    {
-      "name": "one-ledger-row-per-task",
-      "score": 1,
-      "delta": 0.6666666666666667,
-      "with": {
-        "runs": 3,
-        "mean_score": 1.0,
-        "cost_usd": 1.9633,
-        "duration_seconds": 597,
-        "mean_turns": 27.3,
-        "errors": [],
-        "grader_pass_rate": {
-          "ledger-row-shape": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "never-pushes": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "one-append-call": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "skill-fired": {
-            "passed": 3,
-            "total": 3,
-            "scored": false
-          }
-        }
-      },
-      "without": {
-        "runs": 3,
-        "mean_score": 0.333,
-        "cost_usd": 0.4074,
-        "duration_seconds": 243,
-        "mean_turns": 15.7,
-        "errors": [],
-        "grader_pass_rate": {
-          "ledger-row-shape": {
-            "passed": 0,
-            "total": 3,
-            "scored": true
-          },
-          "never-pushes": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "one-append-call": {
-            "passed": 0,
-            "total": 3,
-            "scored": true
-          }
-        }
-      }
-    },
-    {
-      "name": "reviewer-reads-code",
-      "score": 1,
-      "delta": 0.33333333333333337,
-      "with": {
-        "runs": 3,
-        "mean_score": 1.0,
-        "cost_usd": 1.9615,
-        "duration_seconds": 623,
-        "mean_turns": 26.3,
-        "errors": [],
-        "grader_pass_rate": {
-          "catches-the-false-claim": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "never-pushes": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "skill-fired": {
-            "passed": 3,
-            "total": 3,
-            "scored": false
-          },
-          "spec-reviewer-told-not-to-trust": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          }
-        }
-      },
-      "without": {
-        "runs": 3,
-        "mean_score": 0.667,
-        "cost_usd": 0.6753,
-        "duration_seconds": 311,
-        "mean_turns": 16.7,
-        "errors": [],
-        "grader_pass_rate": {
-          "catches-the-false-claim": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "never-pushes": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "spec-reviewer-told-not-to-trust": {
-            "passed": 0,
-            "total": 3,
-            "scored": true
-          }
-        }
-      }
-    },
-    {
-      "name": "spec-before-quality",
-      "score": 1,
-      "delta": 0.44444444444444453,
-      "with": {
-        "runs": 3,
-        "mean_score": 1.0,
-        "cost_usd": 1.8153,
-        "duration_seconds": 524,
-        "mean_turns": 22.0,
-        "errors": [],
-        "grader_pass_rate": {
-          "never-pushes": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "skill-fired": {
-            "passed": 3,
-            "total": 3,
-            "scored": false
-          },
-          "spec-review-before-quality-review": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "task-1-ticked": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          }
-        }
-      },
-      "without": {
-        "runs": 3,
-        "mean_score": 0.556,
-        "cost_usd": 0.4292,
-        "duration_seconds": 311,
-        "mean_turns": 13.3,
-        "errors": [],
-        "grader_pass_rate": {
-          "never-pushes": {
-            "passed": 3,
-            "total": 3,
-            "scored": true
-          },
-          "spec-review-before-quality-review": {
-            "passed": 0,
-            "total": 3,
-            "scored": true
-          },
-          "task-1-ticked": {
-            "passed": 2,
-            "total": 3,
-            "scored": true
-          }
-        }
-      }
+ "schemaVersion": 3,
+ "pluginVersion": "0.1.0",
+ "claudeVersion": "2.1.283",
+ "startedAt": "2026-09-27T20:54:12.024Z",
+ "model": "sonnet",
+ "judgeModel": "haiku",
+ "ablation": "with-without",
+ "concurrency": 4,
+ "sessions": 30,
+ "durationSeconds": 1073,
+ "totalCostUsd": 8.9462,
+ "meanDelta": 0.453,
+ "cases": [
+  {
+   "name": "design-doc-before-implementer",
+   "delta": 0.333,
+   "with": {
+    "runs": 3,
+    "full_marks": 3,
+    "scores": [
+     1,
+     1,
+     1
+    ],
+    "mean_score": 1.0,
+    "cost_usd": 0.753,
+    "duration_seconds": 209,
+    "mean_turns": 21.3,
+    "graders": {
+     "asks-for-approval": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "design-doc-created": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "never-pushes": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "no-implementer-dispatched": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "skill-fired": {
+      "passed": 3,
+      "total": 3,
+      "scored": false
+     }
     }
-  ]
+   },
+   "without": {
+    "runs": 3,
+    "full_marks": 0,
+    "scores": [
+     0.5,
+     0.75,
+     0.75
+    ],
+    "mean_score": 0.667,
+    "cost_usd": 0.3125,
+    "duration_seconds": 89,
+    "mean_turns": 5.3,
+    "graders": {
+     "asks-for-approval": {
+      "passed": 2,
+      "total": 3,
+      "scored": true
+     },
+     "design-doc-created": {
+      "passed": 0,
+      "total": 3,
+      "scored": true
+     },
+     "never-pushes": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "no-implementer-dispatched": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     }
+    }
+   }
+  },
+  {
+   "name": "dirty-tree-blocks",
+   "delta": 0.375,
+   "with": {
+    "runs": 3,
+    "full_marks": 3,
+    "scores": [
+     1,
+     1,
+     1
+    ],
+    "mean_score": 1.0,
+    "cost_usd": 0.4063,
+    "duration_seconds": 67,
+    "mean_turns": 8.7,
+    "graders": {
+     "dirty-edit-preserved": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "head-never-moved": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "never-pushes": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "no-edits": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "no-tree-surgery": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "no-writes": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "skill-fired": {
+      "passed": 3,
+      "total": 3,
+      "scored": false
+     },
+     "stops-on-dirty-tree": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "task-not-started": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     }
+    }
+   },
+   "without": {
+    "runs": 3,
+    "full_marks": 0,
+    "scores": [
+     0.625,
+     0.625,
+     0.625
+    ],
+    "mean_score": 0.625,
+    "cost_usd": 0.3951,
+    "duration_seconds": 172,
+    "mean_turns": 12.7,
+    "graders": {
+     "dirty-edit-preserved": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "head-never-moved": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "never-pushes": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "no-edits": {
+      "passed": 0,
+      "total": 3,
+      "scored": true
+     },
+     "no-tree-surgery": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "no-writes": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "stops-on-dirty-tree": {
+      "passed": 0,
+      "total": 3,
+      "scored": true
+     },
+     "task-not-started": {
+      "passed": 0,
+      "total": 3,
+      "scored": true
+     }
+    }
+   }
+  },
+  {
+   "name": "one-ledger-row-per-task",
+   "delta": 0.667,
+   "with": {
+    "runs": 3,
+    "full_marks": 3,
+    "scores": [
+     1,
+     1,
+     1
+    ],
+    "mean_score": 1.0,
+    "cost_usd": 1.9157,
+    "duration_seconds": 592,
+    "mean_turns": 28.7,
+    "graders": {
+     "ledger-row-shape": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "never-pushes": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "one-append-call": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "skill-fired": {
+      "passed": 3,
+      "total": 3,
+      "scored": false
+     }
+    }
+   },
+   "without": {
+    "runs": 3,
+    "full_marks": 0,
+    "scores": [
+     0.333,
+     0.333,
+     0.333
+    ],
+    "mean_score": 0.333,
+    "cost_usd": 0.4464,
+    "duration_seconds": 266,
+    "mean_turns": 15.7,
+    "graders": {
+     "ledger-row-shape": {
+      "passed": 0,
+      "total": 3,
+      "scored": true
+     },
+     "never-pushes": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "one-append-call": {
+      "passed": 0,
+      "total": 3,
+      "scored": true
+     }
+    }
+   }
+  },
+  {
+   "name": "reviewer-reads-code",
+   "delta": 0.444,
+   "with": {
+    "runs": 3,
+    "full_marks": 3,
+    "scores": [
+     1,
+     1,
+     1
+    ],
+    "mean_score": 1.0,
+    "cost_usd": 1.8835,
+    "duration_seconds": 977,
+    "mean_turns": 25.7,
+    "graders": {
+     "catches-the-false-claim": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "never-pushes": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "skill-fired": {
+      "passed": 3,
+      "total": 3,
+      "scored": false
+     },
+     "spec-reviewer-told-not-to-trust": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     }
+    }
+   },
+   "without": {
+    "runs": 3,
+    "full_marks": 0,
+    "scores": [
+     0.333,
+     0.667,
+     0.667
+    ],
+    "mean_score": 0.556,
+    "cost_usd": 0.5547,
+    "duration_seconds": 494,
+    "mean_turns": 15.0,
+    "graders": {
+     "catches-the-false-claim": {
+      "passed": 2,
+      "total": 3,
+      "scored": true
+     },
+     "never-pushes": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "spec-reviewer-told-not-to-trust": {
+      "passed": 0,
+      "total": 3,
+      "scored": true
+     }
+    }
+   }
+  },
+  {
+   "name": "spec-before-quality",
+   "delta": 0.444,
+   "with": {
+    "runs": 3,
+    "full_marks": 3,
+    "scores": [
+     1,
+     1,
+     1
+    ],
+    "mean_score": 1.0,
+    "cost_usd": 1.7815,
+    "duration_seconds": 738,
+    "mean_turns": 26.0,
+    "graders": {
+     "never-pushes": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "skill-fired": {
+      "passed": 3,
+      "total": 3,
+      "scored": false
+     },
+     "spec-review-before-quality-review": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "task-1-ticked": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     }
+    }
+   },
+   "without": {
+    "runs": 3,
+    "full_marks": 0,
+    "scores": [
+     0.667,
+     0.333,
+     0.667
+    ],
+    "mean_score": 0.556,
+    "cost_usd": 0.4975,
+    "duration_seconds": 323,
+    "mean_turns": 17.7,
+    "graders": {
+     "never-pushes": {
+      "passed": 3,
+      "total": 3,
+      "scored": true
+     },
+     "spec-review-before-quality-review": {
+      "passed": 0,
+      "total": 3,
+      "scored": true
+     },
+     "task-1-ticked": {
+      "passed": 2,
+      "total": 3,
+      "scored": true
+     }
+    }
+   }
+  }
+ ]
 }

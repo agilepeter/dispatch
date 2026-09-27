@@ -106,6 +106,7 @@ both with the plugin loaded and against a no-plugin baseline, so a score says wh
 plugin changed rather than what Claude would have done anyway. Five cases, each against a
 tiny scaffolded fixture repo:
 
+<!-- eval-cases:start -->
 - `design-doc-before-implementer` -- a multi-file plan that nobody has approved yet gets a
   design doc and one approval question before any implementer runs.
 - `spec-before-quality` -- once a plan is approved with its design doc in place, the spec
@@ -116,23 +117,34 @@ tiny scaffolded fixture repo:
   and no git surgery to make it disappear.
 - `reviewer-reads-code` -- an implementer's commit and its "all tests pass" report do not
   survive spec review, which reads the code and finds what is missing.
+<!-- eval-cases:end -->
 
+<!-- eval-results:start -->
 Release run, Claude Code 2.1.283, `--runs 3 --ablation with-without`:
 
 | Case | With plugin | Without | Delta |
 |---|---|---|---|
-| design-doc-before-implementer | 1.00 | 0.75 | +0.25 |
+| design-doc-before-implementer | 1.00 | 0.67 | +0.33 |
 | spec-before-quality | 1.00 | 0.56 | +0.44 |
 | one-ledger-row-per-task | 1.00 | 0.33 | +0.67 |
-| dirty-tree-blocks | 1.00 | 0.60 | +0.40 |
-| reviewer-reads-code | 1.00 | 0.67 | +0.33 |
+| dirty-tree-blocks | 1.00 | 0.63 | +0.37 |
+| reviewer-reads-code | 1.00 | 0.56 | +0.44 |
 
-Mean delta +0.42, from one complete run of 30 sessions: 13m38s wall clock at concurrency
-4, $9.19 at list price. All five cases scored 1.00 with the plugin loaded in all three
-repeats. Three repeats per arm is a small sample, and the plugin and the suite were both
-revised between runs until this one, so read these as the scores of the final suite
-against the final plugin, not of a first attempt. Per-grader pass rates for both arms are
-in `evals/reports/0.1.0/result.json`.
+Mean delta +0.45, from one complete run of 30 sessions: 17m53s wall clock at concurrency
+4, $8.95 at list price. All five cases scored 1.00 with the plugin loaded in all three
+repeats. Per-grader pass counts for both arms are in `evals/reports/0.1.0/result.json`.
+<!-- eval-results:end -->
+
+<!-- eval-caveat:start -->
+How much this proves: three repeats per arm is a small sample, and the plugin and the
+suite were both revised between runs until this one, so these are the scores of the final
+suite against the final plugin, not of a first attempt. The baseline moves from run to
+run. Four complete runs were made on the day of this release, each after the suite had
+been corrected, so they do not measure quite the same thing: their mean deltas were +0.42,
++0.46, +0.41 and +0.45, and every case scored 1.00 with the plugin loaded in all four. The
+five cases were written by the plugin's author to show what the plugin is for. They say
+that it does those five things reliably, not how it will do on a plan of yours.
+<!-- eval-caveat:end -->
 
 Building and re-running this suite changed the plugin four times, each time from a run
 that showed the problem:
@@ -144,15 +156,42 @@ that showed the problem:
   coordinator, and the same plan went both ways in different runs. The design pass is now
   chosen by counting files and interfaces.
 - A coordinator sometimes handed a reviewer a paraphrase of its template, which loses the
-  exact wording that tells the reviewer not to trust the report. Every stage now pastes the
-  template's actual text.
+  exact wording that tells the reviewer not to trust the report. Every subagent is now
+  handed the template's actual text.
 - The skill did not always trigger for someone who wanted to start on a plan that was not
   approved yet, although the approval happens inside it. Its trigger text now says so.
 
-The suite changed as well. Three graders were tightened so that a passing mention of a
-phrase cannot satisfy them, and two fixtures were corrected: the design doc now carries the
-file name the skill looks for, and the work under review in `reviewer-reads-code` is a real
-commit instead of a claim in the prompt.
+The suite needed as much correcting as the plugin did, and its graders were the larger
+part of it:
+
+- One grader searched the whole trace for words such as "blocked" and "dirty". The skill's
+  own text contains those words and is part of the trace once the skill loads, so that
+  grader passed on every run in which the skill fired, whatever the run then did. It now
+  reads the run's last message.
+- Patterns written for a command as typed were being matched against the JSON form of the
+  tool call, where a line break and a quote are escaped and the description is part of the
+  text. One could be satisfied by an `echo` that mentioned the command and could not see a
+  quoted path; another would have failed a run for a description containing the word
+  "push". Each is now anchored inside the command's own string.
+- Checks that watch for particular tools or commands cannot see a file changed through the
+  shell, a `git restore`, or a commit of someone else's unfinished edit. `dirty-tree-blocks`
+  gained three checks that read the repository when the run ends: the uncommitted edit is
+  still there, the task's code is untouched, the history never moved.
+- The fixtures were corrected in two ways: the design doc now carries the file name the
+  skill looks for, in the four cases that ship one, and the work under review in
+  `reviewer-reads-code` is a real commit instead of a claim in the prompt.
+
+Every grader that carries a pattern now has examples in `tests/test_eval_graders.py` of
+what it must accept and what it must refuse, and a test fails when a grader is added
+without any. The graders written or rewritten for this release were also run against
+deliberate misbehaviour in a real eval before they were trusted: a stash, a restore, a
+commit of the stray edit, a change made through the shell, a run that loads the skill and
+does nothing.
+
+Two limits are known, and each is written into the grader that has it. A line of a
+here-document that begins with the ledger command is counted as a call to it; the grader
+that counts the rows in the ledger file is the one to believe. A push reached through a
+shell alias or another program is not seen, because the grader reads the text of a command.
 
 Reproduce with Claude Code 2.1.283 or later:
 
@@ -160,13 +199,16 @@ Reproduce with Claude Code 2.1.283 or later:
 claude plugin eval . --model sonnet --judge-model haiku --ablation with-without \
   --runs 3 -j 4 --scaffold --trust-plugin --no-publish \
   --allow-tools Bash Write Edit --json result.json
+scripts/eval-report.py summarize result.json
+scripts/eval-report.py readme
 ```
 
 Add `--max-cost-usd <n>` if you want a ceiling: it is a guard against a runaway run, not a
-budget the suite needs, and a run that hits it reports partial results that should not be
-quoted. The raw `--json` and `--report` output embeds the sandbox's local paths and full
-transcripts; scrub both before committing, the way `evals/reports/0.1.0/result.json` in
-this repo already has.
+budget the suite needs, and a run that hits it is partial. `eval-report.py` refuses a
+partial run, a run with an error in any session, and a run whose paid graders were skipped.
+The raw `--json` and `--report` output embeds the local paths of the machine it ran on and
+the full text of every session, so it is never committed; the report keeps the counts,
+scores, costs and durations, and `evals/results/` is ignored.
 
 ## The ledger
 

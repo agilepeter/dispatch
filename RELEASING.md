@@ -11,8 +11,19 @@ already installed.
    `version`: two version fields are one too many, and the validator reports a mismatch.
 2. Add a section for that version at the top of `CHANGELOG.md`, dated the day you tag.
    Every line must be true of the code.
-3. Run the eval suite if the skill, a template or a grader changed (see "Evals" in the
-   README), and update the numbers there and in `evals/reports/<version>/` from that one run.
+3. Run the eval suite if the skill, a template, a fixture or a grader changed (the command
+   is under "Evals" in the README), then publish its numbers from that one run:
+
+   ```
+   scripts/eval-report.py summarize result.json
+   scripts/eval-report.py readme
+   ```
+
+   The first writes `evals/reports/<version>/result.json` and refuses a run that is
+   partial, has an error in any session, or skipped a paid grader. The second rewrites the
+   results block in the README from that report. Nothing else in the README is generated:
+   the paragraph on how much the numbers prove is yours to write, and it has to be true of
+   this run. The raw output stays out of the repository.
 4. Run the checks:
 
    ```
@@ -24,13 +35,15 @@ already installed.
 
    `release-check.sh` confirms the version agrees everywhere, runs both validations and a
    dry run of the tag, and refuses if the tag already exists. It only checks; it never
-   tags. The two validations are not the same check twice: the first reads the plugin's
-   manifest and its skills, the second reads the marketplace manifest only.
+   tags. The two validations are listed on their own as well because run by hand they
+   print everything they found, where the script folds a failure to one line. They are
+   not the same check twice: the first reads the plugin's manifest and its skills, the
+   second reads the marketplace manifest only.
 
    Neither validation proves that a skill's frontmatter is valid YAML. Claude Code 2.1.283
-   accepts a value with an unquoted colon in it; 2.1.210 rejects the same file and loads
-   the skill with its metadata dropped. The test suite parses every skill's frontmatter
-   strictly, which is why `pytest` is first on this list and cannot be skipped.
+   accepts a value with an unquoted colon in it; 2.1.210 rejects the same file and reports
+   that the skill would load with its metadata dropped. The test suite parses every skill's
+   frontmatter strictly, which is why `pytest` is first on this list and cannot be skipped.
 5. Commit, push, and wait for CI to pass on all three operating systems.
 6. Tag and push the tag:
 
