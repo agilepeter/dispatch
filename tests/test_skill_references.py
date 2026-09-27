@@ -254,3 +254,18 @@ def test_design_pass_is_chosen_by_counting_files_not_by_judging_difficulty():
     )
     assert "Count files and interfaces, not difficulty" in skill
     assert "Single-file or mechanical plans" not in skill
+
+
+def test_every_pasted_template_is_read_fresh_including_the_final_review():
+    """The rule that a template is pasted as written, never paraphrased, has to reach every
+    subagent that is handed one. The final review sits under its own heading, outside the
+    per-task loop, so it carries the rule itself."""
+    skill = (Path(__file__).resolve().parent.parent / "skills" / "dispatch" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    loop = skill[skill.index("## Per-task loop") : skill.index("## After the last task")]
+    final = skill[skill.index("## After the last task") : skill.index("## Constraints")]
+    for name, section in (("the per-task loop", loop), ("the final review", final)):
+        flat = " ".join(section.split())
+        assert "read fresh" in flat, f"{name} never says its template is read fresh"
+        assert "actual text" in flat, f"{name} never says to paste the template's actual text"

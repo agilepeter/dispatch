@@ -39,8 +39,9 @@ message that follows the same rule as your comments, below. The coordinator will
 you, and a task left uncommitted goes back to you before any review, not forward to a reviewer.
 
 Explain the invariant in your own words. Never cite a plan, a task number, a design amendment,
-or a reviewer: the plan and the design doc are working documents, not part of this repository's
-history, so a citation to either dangles for every other reader of this code later.
+a reviewer or a coordinator: the plan and the design doc are working documents, not part of
+this repository's history, so a citation to either dangles for every other reader of this code
+later.
 
 ## Self-review before reporting
 

@@ -172,10 +172,11 @@ Initialize before Stage 1: `impl_loops = 1`, `spec_loops = 0`, `quality_loops = 
 `model_impl` = the starting tier. If a task later escalates tiers, append each new one with
 `+`, lowest first, e.g. `sonnet+opus` (only tiers actually used, never a skipped one).
 
-Every stage below says to paste a template -- read the file fresh each time and paste its
-actual text, not a summary or a reconstruction from memory. A subagent handed a paraphrase
-instead of the real file is missing exact phrasing the checklist, the anti-trust framing, and
-this skill's own evals all depend on, even when the paraphrase captures the general idea.
+Every subagent this skill spawns is handed a template: the three stages below, and the final
+review after the last task. Each time, the file is read fresh and its actual text is pasted,
+not a summary or a reconstruction from memory. A subagent handed a paraphrase is missing the
+exact wording its checklist and its do-not-trust-the-report framing depend on, even when the
+paraphrase captures the general idea.
 
 **Stage 1 -- Implement.** Spawn a fresh implementer subagent on the model from Defaults. Paste
 `${CLAUDE_SKILL_DIR}/templates/implementer-brief.md`, then the task's full text, then the
@@ -280,12 +281,13 @@ ${CLAUDE_PLUGIN_ROOT}/bin/dispatch-ledger append \
 ## After the last task
 
 Spawn one fresh reviewer across the entire diff. Paste
-`${CLAUDE_SKILL_DIR}/templates/final-review.md`, then `git diff <baseline>..HEAD`. A Critical
-finding here is fixed by a fresh implementer and re-reviewed once before the run reports done;
-a second Critical finding escalates to the user instead of trying a third time. Here too: a
-small fix gets one fresh pass, committed by the coordinator; anything larger goes to the user,
-per Stage 2. Record it in the report to the user. Important and Minor findings follow the
-Defaults review-strictness setting, and are listed in the report either way.
+`${CLAUDE_SKILL_DIR}/templates/final-review.md` (read fresh, its actual text, as in the
+per-task loop), then `git diff <baseline>..HEAD`. A Critical finding here is fixed by a fresh
+implementer and re-reviewed once before the run reports done; a second Critical finding
+escalates to the user instead of trying a third time. Here too: a small fix gets one fresh
+pass, committed by the coordinator; anything larger goes to the user, per Stage 2. Record it in
+the report to the user. Important and Minor findings follow the Defaults review-strictness
+setting, and are listed in the report either way.
 
 Report to the user with a summary of what was built and the final review's findings, then run
 and show `${CLAUDE_PLUGIN_ROOT}/bin/dispatch-stats --oneline` so they see this run's effect on
