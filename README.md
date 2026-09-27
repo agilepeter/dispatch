@@ -139,11 +139,11 @@ repeats. Per-grader pass counts for both arms are in `evals/reports/0.1.0/result
 How much this proves: three repeats per arm is a small sample, and the plugin and the
 suite were both revised between runs until this one, so these are the scores of the final
 suite against the final plugin, not of a first attempt. The baseline moves from run to
-run. Four complete runs were made on the day of this release, each after the suite had
-been corrected, so they do not measure quite the same thing: their mean deltas were +0.42,
-+0.46, +0.41 and +0.45, and every case scored 1.00 with the plugin loaded in all four. The
-five cases were written by the plugin's author to show what the plugin is for. They say
-that it does those five things reliably, not how it will do on a plan of yours.
+run. Four complete runs were made on 2026-09-27, each after the suite had been corrected,
+so they do not measure quite the same thing: their mean deltas were +0.42, +0.46, +0.41
+and +0.45, and every case scored 1.00 with the plugin loaded in all four. The five cases
+were written by the plugin's author to show what the plugin is for. They say that it does
+those five things reliably, not how it will do on a plan of yours.
 <!-- eval-caveat:end -->
 
 Building and re-running this suite changed the plugin four times, each time from a run
