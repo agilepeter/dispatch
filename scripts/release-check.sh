@@ -49,10 +49,12 @@ PY
 
 if ! version="$(plugin_version 2>/dev/null)" || [ -z "$version" ]; then
   fail "cannot read a version from .claude-plugin/plugin.json"
-  echo "release-check: aborting, no plugin version to compare against" >&2
   exit 1
 fi
-name="$(plugin_name)"
+if ! name="$(plugin_name 2>/dev/null)" || [ -z "$name" ]; then
+  fail "cannot read a name from .claude-plugin/plugin.json"
+  exit 1
+fi
 
 changelog_version="$(awk '/^## / { print $2; exit }' CHANGELOG.md 2>/dev/null || true)"
 if [ -z "$changelog_version" ]; then
@@ -84,10 +86,14 @@ else
   fi
 fi
 
-# The tag checks need a git work tree; without one they cannot say anything
+# The tag checks need this directory to be the root of its own git work tree;
+# git searches upward, so a copy nested in another repo must not borrow that
+# repo's tags. Physical paths keep symlinked prefixes (macOS /tmp) from
+# causing false mismatches. Without a repo the check cannot say anything
 # about existing tags, which is itself a failure.
 tag="${name}--v${version}"
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+toplevel="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$toplevel" ] || [ "$(cd "$toplevel" && pwd -P)" != "$(pwd -P)" ]; then
   fail "not a git repository, cannot check for an existing tag"
 else
   if git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1; then
