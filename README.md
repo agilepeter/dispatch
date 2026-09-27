@@ -184,3 +184,7 @@ runs: zeros and empty lists rather than a shorter payload.
   zeroed-out keys above rather than in place of them.
 
 Both scripts are stdlib-only Python 3 and need nothing installed.
+
+## Releases
+
+The release checklist is `scripts/release-check.sh`, which verifies version agreement across plugin.json, CHANGELOG.md, and marketplace.json, validates the plugin with `claude plugin validate --strict`, tests tag creation with `claude plugin tag --dry-run`, and refuses an existing tag locally or on origin. Versions are tagged with `claude plugin tag` (tag form `dispatch--v<version>`). Users update with `claude plugin update dispatch`. The [CHANGELOG](CHANGELOG.md) is the record.
