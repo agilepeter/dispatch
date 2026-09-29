@@ -54,6 +54,13 @@ already installed.
    ```
 
    The tag is `dispatch--v<version>`.
+
+   Then give the tag a GitHub release, with an install block and the changelog section as
+   its notes, so the version shows on the repository page:
+
+   ```
+   gh release create dispatch--v<version> --title "dispatch <version>" --notes-file <notes> --verify-tag
+   ```
 7. Confirm from a fresh profile that the release installs:
 
    ```
